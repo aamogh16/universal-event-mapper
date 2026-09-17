@@ -39,6 +39,7 @@ class Revision(BaseModel):
     findings: list[str] = Field(default_factory=list)
     predicted_impact: str = ""
     ops: list[EditOp] = Field(default_factory=list)
+    drafted_flow: dict[str, Any] | None = None
     diff_text: str = ""
     diff: list[DiffLine] = Field(default_factory=list)
     confidence: float = 0.0
@@ -62,6 +63,9 @@ class Revision(BaseModel):
 
 class Proposal(BaseModel):
     id: str = Field(default_factory=lambda: uuid.uuid4().hex[:8])
+    # "patch"  -> edit an existing flow
+    # "create" -> nothing covers this signal, draft a new automation
+    kind: str = "patch"
     flow_id: str
     flow_name: str
     vertical: str | None = None
@@ -146,12 +150,23 @@ def _upsert(proposal: Proposal) -> None:
 # ------------------------------------------------------------------ creation
 
 
+EMPTY_FLOW: dict[str, Any] = {"name": "(no automation exists)", "version": 0,
+                              "status": "none", "trigger": {}, "steps": []}
+
+
 def _revision_from_audit(
-    n: int, audit: AuditOutput, before: dict, prompted_by: str = ""
+    n: int, audit: AuditOutput, before: dict | None, prompted_by: str = ""
 ) -> Revision:
-    result = apply_patch(before, audit.ops)
-    after = dict(result.flow)
-    after["version"] = int(before.get("version", 1)) + 1
+    if audit.drafted_flow is not None:
+        # A created flow diffs against nothing, so every line reads as an
+        # addition -- which is exactly what "I drafted this for you" looks like.
+        before = EMPTY_FLOW
+        after = audit.drafted_flow
+    else:
+        before = before or EMPTY_FLOW
+        result = apply_patch(before, audit.ops)
+        after = dict(result.flow)
+        after["version"] = int(before.get("version", 1)) + 1
     return Revision(
         n=n,
         headline=audit.headline,
@@ -160,6 +175,7 @@ def _revision_from_audit(
         findings=audit.findings,
         predicted_impact=audit.predicted_impact,
         ops=audit.ops,
+        drafted_flow=audit.drafted_flow,
         diff_text=render_diff(before, after),
         diff=diff_lines(before, after),
         confidence=audit.confidence,
@@ -176,26 +192,38 @@ def _revision_from_audit(
 
 def create_from_signal(signal: Any, *, origin: str | None = None) -> Proposal | None:
     """Audit the flow for a signal and open a proposal. None if nothing to say."""
-    flow = flow_store.pick_flow_for_signal(signal)
-    if flow is None:
-        return None
+    # Strict coverage: is any flow actually RESPONSIBLE for this signal?
+    # None is the interesting answer -- it means draft something new rather
+    # than bend an unrelated flow to cover it.
+    flow = flow_store.find_covering_flow(signal)
+    siblings = flow_store.flows_for(vertical=signal.vertical)
 
     # One open proposal per flow. Several signals can point at the same flow
     # (two lapsed donors, one donor-lapse flow), and stacking near-identical
     # proposals is noise the reviewer has to dismiss.
-    for existing in _load():
-        if existing.flow_id == flow["id"] and existing.status in ("pending", "revised"):
-            return None
+    if flow is not None:
+        for existing in _load():
+            if existing.flow_id == flow["id"] and existing.status in ("pending", "revised"):
+                return None
+    else:
+        for existing in _load():
+            if (
+                existing.kind == "create"
+                and existing.signal_kind == signal.kind
+                and existing.status in ("pending", "revised")
+            ):
+                return None
 
-    bundle = context.build(signal, flow)
-    audit = auditor.propose(bundle)
-    if not audit.ops:
+    bundle = context.build(signal, flow, sibling_flows=siblings)
+    audit = auditor.propose(bundle) if flow else auditor.propose_new_flow(bundle)
+    if not audit.ops and not audit.drafted_flow:
         return None
 
     proposal = Proposal(
-        flow_id=flow["id"],
-        flow_name=flow["name"],
-        vertical=flow.get("vertical"),
+        kind=audit.kind,
+        flow_id=flow["id"] if flow else "",
+        flow_name=flow["name"] if flow else (audit.drafted_flow or {}).get("name", "new flow"),
+        vertical=(flow or {}).get("vertical") or signal.vertical,
         origin=origin or signal.origin,
         signal_kind=signal.kind,
         signal_title=signal.title,
@@ -223,6 +251,18 @@ def approve(proposal_id: str) -> tuple[Proposal | None, dict | None]:
     proposal = get(proposal_id)
     if proposal is None or proposal.status in ("approved",):
         return proposal, None
+
+    if proposal.kind == "create":
+        drafted = proposal.current.drafted_flow
+        if not drafted:
+            return proposal, None
+        created = flow_store.add_flow(drafted, proposal_id=proposal.id)
+        proposal.status = "approved"
+        proposal.resolved_at = _now()
+        proposal.applied_version = created["version"]
+        proposal.flow_id = created["id"]
+        _upsert(proposal)
+        return proposal, created
 
     flow = flow_store.get_flow(proposal.flow_id)
     if flow is None:
