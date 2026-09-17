@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Composer · proactive agent</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2330; --line:#2a3240;
+    --tx:#e6edf3; --dim:#8b949e; --dim2:#6e7781;
+    --patch:#58a6ff; --create:#bc8cff; --campaign:#3fb950;
+    --add:#3fb950; --del:#f85149; --warn:#d29922; --accent:#58a6ff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);
+    font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
+  code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  a{color:var(--accent)}
+
+  header{display:flex;align-items:center;gap:16px;padding:12px 20px;
+    border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+  header h1{font-size:15px;margin:0;font-weight:600;letter-spacing:.2px}
+  header .sub{color:var(--dim2);font-size:12px}
+  .pills{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
+  .pill{font-size:11px;padding:3px 9px;border-radius:99px;background:var(--panel2);
+    border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+  .pill b{color:var(--tx);font-weight:600}
+  .pill.ok b{color:var(--campaign)} .pill.bad b{color:var(--del)}
+
+  .bar{display:flex;gap:8px;padding:10px 20px;border-bottom:1px solid var(--line);
+    align-items:center;flex-wrap:wrap;background:var(--panel)}
+  button{font:inherit;font-size:13px;padding:6px 13px;border-radius:6px;cursor:pointer;
+    background:var(--panel2);color:var(--tx);border:1px solid var(--line)}
+  button:hover{border-color:var(--dim2)}
+  button.primary{background:#1f6feb;border-color:#1f6feb;color:#fff}
+  button.primary:hover{background:#2a7aff}
+  button.danger{background:transparent;border-color:#5c2626;color:#f0a0a0}
+  button:disabled{opacity:.45;cursor:default}
+  select{font:inherit;font-size:13px;padding:6px 8px;background:var(--panel2);
+    color:var(--tx);border:1px solid var(--line);border-radius:6px}
+  .spacer{flex:1}
+  .tabs{display:flex;gap:4px}
+  .tab{padding:6px 13px;border-radius:6px;font-size:13px;cursor:pointer;color:var(--dim)}
+  .tab.on{background:var(--panel2);color:var(--tx)}
+
+  main{display:grid;grid-template-columns:340px 1fr;gap:0;height:calc(100vh - 106px)}
+  .col{overflow-y:auto;padding:14px 16px}
+  .col.left{border-right:1px solid var(--line);background:#11161d}
+  .single{grid-column:1/-1}
+
+  .sect{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--dim2);
+    margin:0 0 9px;font-weight:600}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--line);
+    border-radius:7px;padding:10px 12px;margin-bottom:8px;cursor:pointer}
+  .card:hover{border-color:var(--dim2)}
+  .card.sel{border-color:var(--accent);background:var(--panel2)}
+  .card.patch{border-left-color:var(--patch)}
+  .card.create{border-left-color:var(--create)}
+  .card.campaign{border-left-color:var(--campaign)}
+  .card .hl{font-weight:500;margin:3px 0 5px;font-size:13px}
+  .card .meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+
+  .tag{font-size:10px;padding:2px 7px;border-radius:4px;background:var(--panel2);
+    border:1px solid var(--line);color:var(--dim);text-transform:uppercase;
+    letter-spacing:.5px;font-weight:600}
+  .tag.patch{color:var(--patch);border-color:#1f4e79}
+  .tag.create{color:var(--create);border-color:#4c3575}
+  .tag.campaign{color:var(--campaign);border-color:#1f5c2e}
+  .tag.trigger{color:var(--warn);border-color:#5c4a1a}
+  .tag.sweep{color:var(--dim);}
+  .tag.approved{color:var(--campaign)} .tag.revised{color:var(--warn)}
+
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;
+    padding:14px 16px;margin-bottom:14px}
+  .panel h3{margin:0 0 8px;font-size:13px;font-weight:600}
+  .quiet{color:var(--dim);font-size:13px}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{font-size:11px;padding:3px 9px;border-radius:5px;background:var(--panel2);
+    border:1px solid var(--line);color:var(--dim)}
+  .chip.hot{color:var(--create);border-color:#4c3575}
+
+  pre.diff{margin:0;padding:12px;background:#0b0f14;border:1px solid var(--line);
+    border-radius:7px;overflow-x:auto;font-size:12.5px;line-height:1.6}
+  .dl{display:block;white-space:pre-wrap}
+  .dl.add{color:var(--add);background:rgba(63,185,80,.09)}
+  .dl.remove{color:var(--del);background:rgba(248,81,73,.09)}
+  .dl.meta{color:var(--patch);opacity:.8}
+  .dl.context{color:var(--dim)}
+
+  ul.findings{margin:6px 0 0;padding-left:18px;color:var(--tx)}
+  ul.findings li{margin-bottom:5px}
+
+  .msg{background:#0b0f14;border:1px solid var(--line);border-radius:7px;padding:13px}
+  .msg .subj{font-weight:600;margin-bottom:9px}
+  .msg .body{white-space:pre-wrap;color:#cdd9e5;font-size:13px}
+
+  .revtabs{display:flex;gap:6px;margin-bottom:10px}
+  .revtab{font-size:12px;padding:4px 11px;border-radius:5px;cursor:pointer;
+    background:var(--panel2);border:1px solid var(--line);color:var(--dim)}
+  .revtab.on{color:var(--tx);border-color:var(--accent)}
+
+  .fb{width:100%;min-height:74px;background:#0b0f14;color:var(--tx);
+    border:1px solid var(--line);border-radius:7px;padding:10px;font:inherit;
+    font-size:13px;resize:vertical}
+  .actions{display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap}
+  .foot{margin-top:12px;padding-top:10px;border-top:1px solid var(--line);
+    color:var(--dim2);font-size:11.5px}
+
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{text-align:left;color:var(--dim2);font-weight:600;font-size:11px;
+    text-transform:uppercase;letter-spacing:.6px;padding:6px 10px 6px 0;
+    border-bottom:1px solid var(--line)}
+  td{padding:7px 10px 7px 0;border-bottom:1px solid #1b212b;vertical-align:top}
+
+  .learned{border-left:3px solid var(--create);padding:8px 12px;background:var(--panel2);
+    border-radius:0 6px 6px 0;margin-bottom:7px}
+  .banner{padding:10px 14px;border-radius:7px;margin-bottom:12px;font-size:13px}
+  .banner.ok{background:rgba(63,185,80,.12);border:1px solid #1f5c2e}
+  .banner.learn{background:rgba(188,140,255,.12);border:1px solid #4c3575}
+  .spin{display:inline-block;width:11px;height:11px;border:2px solid var(--dim2);
+    border-top-color:transparent;border-radius:50%;animation:s .7s linear infinite;
+    vertical-align:-1px}
+  @keyframes s{to{transform:rotate(360deg)}}
+  .kv{display:grid;grid-template-columns:130px 1fr;gap:5px 12px;font-size:12.5px}
+  .kv dt{color:var(--dim2)} .kv dd{margin:0}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Composer <span class="sub">· proactive agent prototype</span></h1>
+  <div class="pills" id="pills"></div>
+</header>
+
+<div class="bar">
+  <div class="tabs" id="tabs">
+    <div class="tab on" data-v="proposals">Proposals</div>
+    <div class="tab" data-v="ingest">Event ingest</div>
+    <div class="tab" data-v="flows">Flows</div>
+    <div class="tab" data-v="activity">Activity</div>
+  </div>
+  <div class="spacer"></div>
+  <select id="evt"></select>
+  <button id="fire">Fire event →</button>
+  <button id="sweep" class="primary">Run sweep now</button>
+  <button id="reset">Reset demo</button>
+</div>
+
+<main id="main"></main>
+
+<script>
+const $ = s => document.querySelector(s);
+const el = (t,c,h) => { const e=document.createElement(t); if(c)e.className=c;
+  if(h!==undefined)e.innerHTML=h; return e; };
+const esc = s => String(s??'').replace(/[&<>"]/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const api = async (p,o) => (await fetch('/api'+p, o?{method:'POST',
+  headers:{'Content-Type':'application/json'}, body:JSON.stringify(o)}:{})).json();
+const money = v => v==null ? '—' : '$'+Number(v).toFixed(6);
+
+let S = { view:'proposals', proposals:[], sel:null, detail:null, rev:null,
+          corrections:[], runs:[], flows:[], sources:null, ingest:null, busy:null };
+
+/* ---------------------------------------------------------------- status */
+async function status(){
+  const s = await api('/status');
+  $('#pills').innerHTML = `
+    <span class="pill ${s.klaviyo.ok?'ok':'bad'}">Klaviyo <b>${s.klaviyo.ok?'live':'down'}</b></span>
+    <span class="pill">model <b>${esc(s.model)}</b></span>
+    <span class="pill">spent <b>${money(s.spent_usd)}</b></span>
+    <span class="pill">events <b>${s.events}</b></span>
+    <span class="pill">flows <b>${s.flows}</b></span>
+    <span class="pill">pending <b>${s.proposals.pending}</b></span>`;
+}
+
+/* ------------------------------------------------------------- proposals */
+function card(p){
+  const c = el('div', `card ${p.kind}${S.sel===p.id?' sel':''}`);
+  c.innerHTML = `<div class="meta">
+      <span class="tag ${p.kind}">${p.kind}</span>
+      <span class="tag ${p.origin}">${p.origin==='trigger'?'⚡ trigger':'🕐 sweep'}</span>
+      ${p.status!=='pending'?`<span class="tag ${p.status}">${p.status}</span>`:''}
+      ${p.revision_count>1?`<span class="tag">rev ${p.revision_count}</span>`:''}
+    </div>
+    <div class="hl">${esc(p.headline)}</div>
+    <div class="quiet" style="font-size:11.5px">${esc(p.flow_name)}</div>`;
+  c.onclick = () => select(p.id);
+  return c;
+}
+
+async function select(id){
+  S.sel = id; S.rev = null;
+  S.detail = await api('/proposals/'+id);
+  S.rev = S.detail.revisions.length;
+  render();
+}
+
+function diffBlock(diff){
+  if(!diff || !diff.length) return '';
+  const pre = el('pre','diff');
+  diff.forEach(d => pre.appendChild(el('span','dl '+d.kind,
+    esc((d.kind==='add'?'+':d.kind==='remove'?'-':' ')+d.text))));
+  return pre;
+}
+
+function detailView(){
+  const wrap = el('div');
+  if(!S.detail){
+    wrap.appendChild(el('div','quiet','Select a proposal, or run a sweep.'));
+    return wrap;
+  }
+  const p = S.detail;
+  const r = p.revisions[(S.rev||p.revisions.length)-1];
+
+  if(p.status==='approved'){
+    wrap.appendChild(el('div','banner ok', p.kind==='campaign'
+      ? `✓ Sent to <b>${p.sent_to}</b> recipients <span class="quiet">(recorded locally — nothing actually transmitted)</span>`
+      : `✓ Applied — flow is now <b>v${p.applied_version}</b>`));
+  }
+
+  const head = el('div','panel');
+  head.innerHTML = `<div class="meta" style="display:flex;gap:6px;margin-bottom:7px">
+      <span class="tag ${p.kind}">${p.kind}</span>
+      <span class="tag ${p.origin}">${p.origin==='trigger'?'⚡ trigger':'🕐 sweep'}</span>
+      <span class="tag">${esc(p.signal_scope)} scope</span>
+      ${p.corrections_applied?`<span class="tag create">${p.corrections_applied} learned correction${p.corrections_applied>1?'s':''} applied</span>`:''}
+    </div>
+    <div style="font-size:16px;font-weight:600;margin-bottom:3px">${esc(r.headline)}</div>
+    <div class="quiet">${esc(p.flow_name)}</div>`;
+  wrap.appendChild(head);
+
+  if(p.revisions.length>1){
+    const rt = el('div','revtabs');
+    p.revisions.forEach(x => {
+      const t = el('div','revtab'+((S.rev||p.revisions.length)===x.n?' on':''),
+        'revision '+x.n+(x.n===1?'':' · after your feedback'));
+      t.onclick = () => { S.rev = x.n; render(); };
+      rt.appendChild(t);
+    });
+    wrap.appendChild(rt);
+  }
+
+  const noticed = el('div','panel');
+  noticed.innerHTML = `<h3>What it noticed</h3>
+    <div style="margin-bottom:7px">${esc(p.signal_title)}</div>
+    <div class="quiet">${esc(r.observation)}</div>`;
+  wrap.appendChild(noticed);
+
+  const ctx = el('div','panel');
+  ctx.innerHTML = `<h3>Context it pulled first</h3>`;
+  const chips = el('div','chips');
+  (p.context_lines||[]).forEach(l => chips.appendChild(
+    el('span','chip'+(/correction/.test(l)&&!/no learned/.test(l)?' hot':''), esc(l))));
+  ctx.appendChild(chips);
+  wrap.appendChild(ctx);
+
+  if(r.prompted_by_feedback){
+    const fb = el('div','panel');
+    fb.innerHTML = `<h3>This revision came from your feedback</h3>
+      <div style="font-style:italic;color:#cdd9e5">“${esc(r.prompted_by_feedback)}”</div>`;
+    wrap.appendChild(fb);
+  }
+
+  const audit = el('div','panel');
+  audit.innerHTML = `<h3>What it audited</h3><div>${esc(r.audit_summary)}</div>`
+    + (r.findings&&r.findings.length
+        ? `<ul class="findings">${r.findings.map(f=>`<li>${esc(f)}</li>`).join('')}</ul>` : '');
+  wrap.appendChild(audit);
+
+  if(r.drafted_campaign){
+    const c = r.drafted_campaign;
+    const box = el('div','panel');
+    box.innerHTML = `<h3>The campaign it wrote</h3>
+      <dl class="kv">
+        <dt>audience</dt><dd><b>${c.audience_size}</b> people — ${esc(c.audience_description)}</dd>
+        <dt>counted by</dt><dd class="quiet">${esc(c.audience_basis)}</dd>
+        <dt>for example</dt><dd class="quiet">${esc((c.audience_sample||[]).join(', '))}</dd>
+        <dt>channel</dt><dd>${esc(c.channel)} · ${esc(c.send_timing)}</dd>
+      </dl>
+      <div class="msg" style="margin-top:11px">
+        ${c.subject?`<div class="subj">${esc(c.subject)}</div>`:''}
+        <div class="body">${esc(c.body)}</div>
+      </div>`;
+    wrap.appendChild(box);
+  } else if(r.diff && r.diff.length){
+    const box = el('div','panel');
+    box.innerHTML = `<h3>The change it made
+      <span class="quiet" style="font-weight:400">— diff produced by applying the patch</span></h3>`;
+    box.appendChild(diffBlock(r.diff));
+    if(r.ops&&r.ops.length){
+      box.appendChild(el('div','quiet',
+        '<div style="margin-top:9px">'+r.ops.map(o=>'· '+esc(o)).join('<br>')+'</div>'));
+    }
+    wrap.appendChild(box);
+  }
+
+  if(r.predicted_impact){
+    wrap.appendChild(el('div','panel',
+      `<h3>What it expects to change</h3><div>${esc(r.predicted_impact)}</div>`));
+  }
+
+  if(p.status==='pending'||p.status==='revised'){
+    const act = el('div','panel');
+    act.innerHTML = `<h3>Does this look right?</h3>
+      <textarea class="fb" id="fbtx" placeholder="Not right? Say why, in plain words — e.g. our donors are older, don't use SMS"></textarea>`;
+    const row = el('div','actions');
+    const ok = el('button','primary','✓ Approve'+(p.kind==='campaign'?' & send':p.kind==='create'?' & create flow':' & apply'));
+    ok.onclick = async () => {
+      ok.disabled=true; ok.innerHTML='<span class="spin"></span> applying…';
+      await api(`/proposals/${p.id}/approve`,{}); await refresh(); await select(p.id);
+    };
+    const no = el('button','danger','✕ Reject with feedback');
+    no.onclick = async () => {
+      const txt = $('#fbtx').value.trim();
+      if(!txt){ $('#fbtx').focus(); return; }
+      no.disabled=true; no.innerHTML='<span class="spin"></span> revising…';
+      const res = await api(`/proposals/${p.id}/reject`,{feedback:txt});
+      await refresh(); await select(p.id);
+      if(res.learned && res.learned.length){
+        const b = el('div','banner learn',
+          '<b>Learned from that — it won’t need telling again:</b><br>'
+          + res.learned.map(c=>`· ${esc(c.rule)} <span class="quiet">(${esc(c.vertical||'all verticals')})</span>`).join('<br>'));
+        $('#detail').prepend(b);
+      }
+    };
+    row.appendChild(ok); row.appendChild(no);
+    act.appendChild(row);
+    wrap.appendChild(act);
+  }
+
+  wrap.appendChild(el('div','foot',
+    `${r.source==='llm'?'generated by':'deterministic fallback —'} <b>${esc(r.model||'rules engine')}</b>
+     · ${money(r.cost_usd)} · ${r.latency_ms||0}ms · confidence ${Math.round((r.confidence||0)*100)}%
+     ${r.fallback_reason?`<br><span style="color:var(--warn)">fell back: ${esc(r.fallback_reason)}</span>`:''}`));
+  return wrap;
+}
+
+/* ---------------------------------------------------------------- views */
+function viewProposals(){
+  const m = $('#main'); m.innerHTML=''; m.style.gridTemplateColumns='340px 1fr';
+  const left = el('div','col left');
+  left.appendChild(el('p','sect',`Inbox · ${S.proposals.length}`));
+  if(!S.proposals.length) left.appendChild(el('div','quiet',
+    'Nothing yet. Hit <b>Run sweep now</b>, or fire an event.'));
+  S.proposals.forEach(p => left.appendChild(card(p)));
+
+  if(S.corrections.length){
+    left.appendChild(el('p','sect','What it has learned'));
+    S.corrections.forEach(c => left.appendChild(el('div','learned',
+      `<div style="font-size:12.5px">${esc(c.rule)}</div>
+       <div class="quiet" style="font-size:11px">${esc(c.vertical||'all verticals')} · used ${c.times_applied}×</div>`)));
+  }
+  const right = el('div','col'); right.id='detail';
+  right.appendChild(detailView());
+  m.appendChild(left); m.appendChild(right);
+}
+
+function viewIngest(){
+  const m = $('#main'); m.innerHTML=''; m.style.gridTemplateColumns='1fr';
+  const c = el('div','col single');
+  c.appendChild(el('p','sect','Events from tools nobody has integrated'));
+  c.appendChild(el('div','quiet',
+    'Klaviyo has hand-built connectors for Mindbody, Toast and Bloomerang. '
+    +'These three have none, and never will — no config exists for them here.'));
+  const row = el('div','actions');
+  (S.sources?.unknown||[]).forEach(u => {
+    const b = el('button',null,u.key.replace(/_/g,' '));
+    b.onclick = async () => {
+      b.disabled=true; b.innerHTML='<span class="spin"></span> mapping…';
+      S.ingest = await api('/map',{key:u.key,send:true}); render();
+    };
+    row.appendChild(b);
+  });
+  c.appendChild(row);
+
+  if(S.ingest){
+    const g = el('div'); g.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px';
+    g.appendChild(el('div','panel',`<h3>What the tool sent</h3>
+      <pre class="diff" style="max-height:420px">${esc(JSON.stringify(S.ingest.payload,null,2))}</pre>`));
+    const mp = S.ingest.mapping;
+    g.appendChild(el('div','panel',`<h3>What it worked out</h3>
+      <dl class="kv">
+        <dt>metric</dt><dd><b>${esc(mp.metric_name)}</b></dd>
+        <dt>profile</dt><dd>${esc(mp.identity.email||mp.identity.phone_number||'—')}</dd>
+        <dt>name</dt><dd>${esc([mp.identity.first_name,mp.identity.last_name].filter(Boolean).join(' ')||'—')}</dd>
+        <dt>value</dt><dd>${mp.value?esc(mp.value+' '+(mp.value_currency||'')):'—'}</dd>
+        <dt>strategy</dt><dd>${esc(mp.strategy)} · ${Math.round(mp.confidence*100)}% confident</dd>
+      </dl>
+      <div class="sect" style="margin-top:13px">field by field</div>
+      <table><tbody>${mp.traces.slice(0,10).map(t=>
+        `<tr><td class="mono quiet">${esc(t.source_path)}</td>
+             <td class="mono">→ ${esc(t.destination)}</td></tr>`).join('')}</tbody></table>
+      ${S.ingest.klaviyo?`<div class="banner ${S.ingest.klaviyo.ok?'ok':''}" style="margin-top:13px">
+        ${esc(S.ingest.klaviyo.summary)} · ${S.ingest.klaviyo.latency_ms}ms
+        ${S.ingest.klaviyo.profile_url?`<br><a href="${esc(S.ingest.klaviyo.profile_url)}" target="_blank">open the profile in Klaviyo →</a>`:''}
+      </div>`:''}`));
+    c.appendChild(g);
+  }
+  m.appendChild(c);
+}
+
+function viewFlows(){
+  const m = $('#main'); m.innerHTML=''; m.style.gridTemplateColumns='1fr';
+  const c = el('div','col single');
+  c.appendChild(el('p','sect','Automations in the account'));
+  S.flows.forEach(f => {
+    c.appendChild(el('div','panel',`<h3>${esc(f.name)}
+      <span class="tag">v${f.version}</span>
+      <span class="tag ${f.status==='live'?'approved':''}">${esc(f.status)}</span>
+      <span class="quiet" style="font-weight:400">· ${esc(f.vertical||'')}</span></h3>
+      <pre class="diff">${esc(f.outline.join('\n'))}</pre>`));
+  });
+  m.appendChild(c);
+}
+
+function viewActivity(){
+  const m = $('#main'); m.innerHTML=''; m.style.gridTemplateColumns='1fr';
+  const c = el('div','col single');
+  c.appendChild(el('p','sect','The two patterns'));
+  c.appendChild(el('div','quiet','They differ by the data they can see, not just timing. '
+    +'A trigger sees one profile the instant an event lands. A sweep sees every profile across time windows.'));
+  c.appendChild(el('div','panel',`<table>
+    <thead><tr><th>time</th><th>pattern</th><th>what it could see</th>
+      <th>signals</th><th>proposals</th><th>ms</th><th>detail</th></tr></thead>
+    <tbody>${S.runs.slice().reverse().map(r=>`<tr>
+      <td class="mono quiet">${esc(r.clock)}</td>
+      <td><span class="tag ${r.origin}">${r.origin==='trigger'?'⚡ trigger':'🕐 sweep'}</span></td>
+      <td class="quiet">${esc(r.scope)}</td><td>${r.signals_found}</td>
+      <td>${r.proposals_created}</td><td class="quiet">${r.duration_ms}</td>
+      <td class="quiet">${esc(r.detail)}</td></tr>`).join('')
+      || '<tr><td colspan="7" class="quiet">No runs yet.</td></tr>'}</tbody></table>`));
+  m.appendChild(c);
+}
+
+function render(){
+  ({proposals:viewProposals, ingest:viewIngest, flows:viewFlows,
+    activity:viewActivity}[S.view])();
+  document.querySelectorAll('.tab').forEach(t =>
+    t.classList.toggle('on', t.dataset.v===S.view));
+}
+
+async function refresh(){
+  const [p,c,r,f] = await Promise.all([api('/proposals'),api('/corrections'),
+                                       api('/runs'),api('/flows')]);
+  S.proposals=p.proposals; S.corrections=c.corrections; S.runs=r.runs; S.flows=f.flows;
+  await status();
+}
+
+/* ----------------------------------------------------------------- wire */
+document.querySelectorAll('.tab').forEach(t =>
+  t.onclick = () => { S.view=t.dataset.v; render(); });
+
+$('#sweep').onclick = async () => {
+  const b=$('#sweep'); b.disabled=true; b.innerHTML='<span class="spin"></span> thinking…';
+  const res = await api('/sweep',{}); await refresh();
+  b.disabled=false; b.textContent='Run sweep now';
+  S.view='proposals';
+  if(res.created?.length) await select(res.created[0].id); else render();
+};
+
+$('#fire').onclick = async () => {
+  const [source,sample] = $('#evt').value.split('|');
+  const b=$('#fire'); b.disabled=true; b.innerHTML='<span class="spin"></span> sending…';
+  const res = await api('/trigger',{source,sample}); await refresh();
+  b.disabled=false; b.textContent='Fire event →';
+  S.view='proposals';
+  if(res.created?.length) await select(res.created[0].id); else render();
+};
+
+$('#reset').onclick = async () => {
+  const b=$('#reset'); b.disabled=true; b.innerHTML='<span class="spin"></span>';
+  await api('/reset',{}); S.sel=null; S.detail=null; S.ingest=null;
+  await refresh(); b.disabled=false; b.textContent='Reset demo'; render();
+};
+
+(async function init(){
+  S.sources = await api('/sources');
+  $('#evt').innerHTML = S.sources.sources.flatMap(s =>
+    s.samples.map(x => `<option value="${s.key}|${x.key}">${esc(s.tool)} · ${esc(x.label)}</option>`)
+  ).join('');
+  $('#evt').value = 'fitness|class_no_show';
+  await refresh(); render();
+})();
+</script>
+</body>
+</html>
