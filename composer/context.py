@@ -26,12 +26,14 @@ from .patch import render_outline
 @dataclass
 class ContextBundle:
     signal: Any
-    flow: dict
+    # None means no existing automation covers this signal.
+    flow: dict | None
     profile_events: list[Any] = field(default_factory=list)
     lifetime_value: float = 0.0
     tenure_days: int = 0
     segment_peers: int = 0
     corrections: list[Correction] = field(default_factory=list)
+    sibling_flows: list[dict] = field(default_factory=list)
 
     @property
     def summary_lines(self) -> list[str]:
@@ -45,9 +47,12 @@ class ContextBundle:
             lines.append(f"${self.lifetime_value:,.0f} lifetime value")
         if self.segment_peers:
             lines.append(f"{self.segment_peers} similar profiles in segment")
-        lines.append(
-            f"flow v{self.flow.get('version')} ({len(self.flow.get('steps') or [])} steps)"
-        )
+        if self.flow is None:
+            lines.append(f"no flow covers '{self.signal.kind}' — {len(self.sibling_flows)} other flow(s) exist")
+        else:
+            lines.append(
+                f"flow v{self.flow.get('version')} ({len(self.flow.get('steps') or [])} steps)"
+            )
         lines.append(
             f"{len(self.corrections)} learned correction(s) applied"
             if self.corrections
@@ -67,12 +72,31 @@ class ContextBundle:
             f"({'reacting to a single event' if signal.origin == 'trigger' else 'scheduled sweep across profiles'})",
             f"Scope: {signal.scope}",
             "",
-            "## The live flow being audited",
-            "```",
-            *render_outline(self.flow),
-            "```",
-            "",
         ]
+
+        if self.flow is None:
+            parts += [
+                "## Existing automations in this account",
+                "NONE of these are responsible for the signal above:",
+            ]
+            for other in self.sibling_flows:
+                trigger = (other.get("trigger") or {}).get("metric")
+                parts.append(f"- \"{other.get('name')}\" (triggered by: {trigger})")
+            parts += [
+                "",
+                "There is no automation handling this signal at all. Do not patch "
+                "an unrelated flow to cover it -- that would fire for the wrong "
+                "people. Draft a new one.",
+                "",
+            ]
+        else:
+            parts += [
+                "## The live flow being audited",
+                "```",
+                *render_outline(self.flow),
+                "```",
+                "",
+            ]
 
         if self.profile_events:
             parts += ["## This profile's recent history"]
@@ -108,7 +132,7 @@ class ContextBundle:
         return "\n".join(parts)
 
 
-def build(signal: Any, flow: dict) -> ContextBundle:
+def build(signal: Any, flow: dict | None, sibling_flows: list[dict] | None = None) -> ContextBundle:
     """Gather everything relevant to one signal + flow pair."""
     events: list[Any] = []
     lifetime = 0.0
@@ -132,4 +156,5 @@ def build(signal: Any, flow: dict) -> ContextBundle:
         tenure_days=tenure,
         segment_peers=peers,
         corrections=feedback.for_vertical(signal.vertical),
+        sibling_flows=sibling_flows or [],
     )
