@@ -124,6 +124,66 @@
   @keyframes s{to{transform:rotate(360deg)}}
   .kv{display:grid;grid-template-columns:130px 1fr;gap:5px 12px;font-size:12.5px}
   .kv dt{color:var(--dim2)} .kv dd{margin:0}
+
+  /* Business notifications. Elias's phrasing: these interrupt you, rather
+     than waiting in a list you remember to check. So they behave like a
+     notification -- they arrive, they ask, they resolve. */
+  #toasts{position:fixed;right:20px;bottom:20px;width:392px;z-index:90;
+    display:flex;flex-direction:column;gap:11px}
+  .toast{background:#1a212c;border:1px solid #2f3a4a;border-left:3px solid var(--accent);
+    border-radius:9px;padding:13px 15px;box-shadow:0 12px 34px rgba(0,0,0,.55);
+    animation:slide .34s cubic-bezier(.2,.9,.3,1)}
+  .toast.patch{border-left-color:var(--patch)}
+  .toast.create{border-left-color:var(--create)}
+  .toast.campaign{border-left-color:var(--campaign)}
+  .toast.done{border-left-color:var(--campaign)}
+  @keyframes slide{from{opacity:0;transform:translateX(34px) scale(.97)}
+                   to{opacity:1;transform:none}}
+  .thead{display:flex;align-items:center;gap:7px;margin-bottom:8px}
+  .tdot{width:7px;height:7px;border-radius:50%;background:var(--warn);
+    box-shadow:0 0 0 3px rgba(210,153,34,.18);animation:pulse 1.6s ease-in-out infinite}
+  @keyframes pulse{50%{box-shadow:0 0 0 7px rgba(210,153,34,0)}}
+  .tlabel{font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;
+    color:var(--dim);font-weight:700}
+  .tclose{margin-left:auto;background:none;border:none;color:var(--dim2);
+    padding:0 2px;font-size:14px;cursor:pointer}
+  .tnoticed{font-size:13.5px;font-weight:600;line-height:1.4;margin-bottom:6px}
+  .tfix{font-size:12.5px;color:var(--dim);margin-bottom:11px;line-height:1.5}
+  .tfix b{color:var(--tx);font-weight:500}
+  .tactions{display:flex;gap:7px}
+  .tactions button{font-size:12.5px;padding:6px 11px}
+  .tfb{width:100%;min-height:58px;background:#0b0f14;color:var(--tx);
+    border:1px solid var(--line);border-radius:6px;padding:8px;font:inherit;
+    font-size:12.5px;resize:vertical;margin-bottom:8px}
+  .tdone{font-size:12.5px;color:var(--campaign);display:flex;align-items:center;gap:7px}
+  .tlearned{font-size:12px;color:var(--create);margin-top:8px;padding-top:8px;
+    border-top:1px solid var(--line);line-height:1.5}
+
+  .chatwrap{max-width:900px}
+  .prompts{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0 14px}
+  .pchip{font-size:12px;padding:6px 11px;border-radius:99px;background:var(--panel2);
+    border:1px solid var(--line);color:var(--dim);cursor:pointer}
+  .pchip:hover{color:var(--tx);border-color:var(--dim2)}
+  .chatrow{display:flex;gap:8px}
+  .chatin{flex:1;background:#0b0f14;color:var(--tx);border:1px solid var(--line);
+    border-radius:8px;padding:11px 13px;font:inherit;font-size:13.5px}
+  .bubble{background:var(--panel2);border:1px solid var(--line);border-radius:9px;
+    padding:11px 14px;margin:14px 0 0;font-size:13.5px}
+  .bubble.you{border-left:3px solid var(--accent)}
+  .vs{display:grid;grid-template-columns:1fr auto 1fr;gap:0;margin-top:14px;
+    border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .vs .side{padding:13px 15px}
+  .vs .side.a{background:rgba(210,153,34,.06)}
+  .vs .side.b{background:rgba(63,185,80,.06)}
+  .vs .mid{display:flex;align-items:center;padding:0 10px;color:var(--dim2);
+    background:var(--panel);border-left:1px solid var(--line);
+    border-right:1px solid var(--line);font-size:11px}
+  .vs h4{margin:0 0 9px;font-size:11px;text-transform:uppercase;letter-spacing:.7px}
+  .vs .side.a h4{color:var(--warn)} .vs .side.b h4{color:var(--campaign)}
+  .vs .line{font-size:12.5px;margin-bottom:8px;line-height:1.5}
+  .vs .line b{color:var(--tx)}
+  .warnbox{background:rgba(210,153,34,.1);border:1px solid #5c4a1a;border-radius:8px;
+    padding:11px 14px;margin-top:12px;font-size:12.5px;line-height:1.55}
 </style>
 </head>
 <body>
@@ -136,6 +196,7 @@
 <div class="bar">
   <div class="tabs" id="tabs">
     <div class="tab on" data-v="proposals">Proposals</div>
+    <div class="tab" data-v="chat">Chat · today</div>
     <div class="tab" data-v="ingest">Event ingest</div>
     <div class="tab" data-v="flows">Flows</div>
     <div class="tab" data-v="activity">Activity</div>
@@ -143,11 +204,14 @@
   <div class="spacer"></div>
   <select id="evt"></select>
   <button id="fire">Fire event →</button>
+  <button id="arm" title="Fires an event in 20s so the notification interrupts you">Arm notification (20s)</button>
   <button id="sweep" class="primary">Run sweep now</button>
   <button id="reset">Reset demo</button>
 </div>
 
 <main id="main"></main>
+
+<div id="toasts"></div>
 
 <script>
 const $ = s => document.querySelector(s);
@@ -167,7 +231,7 @@ const money = v => {
 
 let S = { view:'proposals', proposals:[], sel:null, detail:null, rev:null,
           corrections:[], runs:[], flows:[], sources:null, ingest:null,
-          signals:[], busy:null };
+          signals:[], chat:[], prompts:[], busy:null };
 
 /* ---------------------------------------------------------------- status */
 async function status(){
@@ -431,6 +495,92 @@ function viewIngest(){
   m.appendChild(c);
 }
 
+function viewChat(){
+  const m = $('#main'); m.innerHTML=''; m.style.gridTemplateColumns='1fr';
+  const c = el('div','col single');
+  const w = el('div','chatwrap');
+
+  w.appendChild(el('p','sect','How Composer works today'));
+  w.appendChild(el('div','quiet',
+    'Describe a campaign and it builds one. The generation is genuinely good — '
+    + 'that is not the problem. The problem is that <b>you have to already know '
+    + 'what to ask for.</b>'));
+
+  const chips = el('div','prompts');
+  S.prompts.forEach(t => {
+    const ch = el('div','pchip', esc(t));
+    ch.onclick = () => { $('#cin').value = t; send(); };
+    chips.appendChild(ch);
+  });
+  w.appendChild(chips);
+
+  const row = el('div','chatrow');
+  const inp = el('input','chatin'); inp.id='cin';
+  inp.placeholder = 'e.g. build a win-back campaign for members who stopped coming';
+  const btn = el('button','primary','Generate');
+  row.appendChild(inp); row.appendChild(btn);
+  w.appendChild(row);
+
+  async function send(){
+    const prompt = $('#cin').value.trim(); if(!prompt) return;
+    btn.disabled = true; btn.innerHTML = '<span class="spin"></span> generating…';
+    const res = await api('/chat', {prompt});
+    S.chat.unshift({prompt, res});
+    render();
+  }
+  btn.onclick = send;
+  inp.onkeydown = e => { if(e.key==='Enter') send(); };
+
+  S.chat.forEach(({prompt, res}) => {
+    w.appendChild(el('div','bubble you', `<b>You:</b> ${esc(prompt)}`));
+    if(!res.ok){
+      w.appendChild(el('div','bubble', `<span style="color:var(--del)">${esc(res.error)}</span>`));
+      return;
+    }
+    const c2 = res.campaign;
+    const b = el('div','bubble');
+    b.innerHTML = `<div style="font-weight:600;margin-bottom:9px">${esc(c2.name)}</div>
+      <dl class="kv">
+        <dt>audience</dt><dd>${esc(c2.audience_description)}</dd>
+        <dt>reach</dt><dd class="quiet">${esc(c2.estimated_reach)}</dd>
+        <dt>channel</dt><dd>${esc(c2.channel)}</dd>
+      </dl>
+      <div class="msg" style="margin-top:11px">
+        <div class="subj">${esc(c2.subject)}</div>
+        <div class="body">${esc(c2.body)}</div>
+      </div>
+      ${c2.assumptions?.length ? `<div class="sect" style="margin-top:13px">what it had to assume</div>
+        <ul class="findings">${c2.assumptions.map(a=>`<li>${esc(a)}</li>`).join('')}</ul>` : ''}
+      <div class="warnbox"><b>What it could not verify:</b><br>${esc(c2.grounding_note)}</div>
+      <div class="foot">${esc(res.model)} · ${money(res.cost_usd)} · ${res.latency_ms}ms</div>`;
+    w.appendChild(b);
+
+    // Put the guess next to the counted number, live from the real signals.
+    const lapse = S.signals.find(x => x.kind==='lapsed_member')
+               || S.signals.find(x => x.audience_size);
+    if(lapse){
+      const vs = el('div','vs');
+      vs.innerHTML = `
+        <div class="side a"><h4>Prompted — this tab</h4>
+          <div class="line">Audience is <b>whatever it inferred</b> from your sentence.</div>
+          <div class="line">Reach: <b>${esc(c2.estimated_reach.slice(0,70))}…</b></div>
+          <div class="line">It assumed the problem exists <b>because you said so</b>.</div>
+          <div class="line">${(c2.assumptions||[]).length} assumption(s) it had to make.</div>
+        </div>
+        <div class="mid">vs</div>
+        <div class="side b"><h4>Proactive — the agent</h4>
+          <div class="line">Audience: <b>${lapse.audience_size} people</b>, counted by query.</div>
+          <div class="line">Rule: <b>${esc(lapse.audience_basis)}</b></div>
+          <div class="line">It found the problem <b>before anyone asked</b>: ${esc(lapse.title)}</div>
+          <div class="line">Named them: ${esc((lapse.audience_sample||[]).slice(0,3).join(', '))}…</div>
+        </div>`;
+      w.appendChild(vs);
+    }
+  });
+
+  c.appendChild(w); m.appendChild(c);
+}
+
 function viewFlows(){
   const m = $('#main'); m.innerHTML=''; m.style.gridTemplateColumns='1fr';
   const c = el('div','col single');
@@ -465,7 +615,7 @@ function viewActivity(){
 }
 
 function render(){
-  ({proposals:viewProposals, ingest:viewIngest, flows:viewFlows,
+  ({proposals:viewProposals, chat:viewChat, ingest:viewIngest, flows:viewFlows,
     activity:viewActivity}[S.view])();
   document.querySelectorAll('.tab').forEach(t =>
     t.classList.toggle('on', t.dataset.v===S.view));
@@ -477,6 +627,115 @@ async function refresh(){
   S.proposals=p.proposals; S.corrections=c.corrections; S.runs=r.runs;
   S.flows=f.flows; S.signals=sg.signals;
   await status();
+}
+
+/* ------------------------------------------------- business notifications */
+const seen = new Set();
+let pollTimer = null;
+
+function toastFor(p){
+  const t = el('div', 'toast '+p.kind);
+  t.dataset.id = p.id;
+
+  const verb = p.kind==='campaign' ? 'drafted a message'
+             : p.kind==='create'   ? 'drafted a new automation'
+             :                       'made a fix';
+  const body = el('div');
+  body.innerHTML = `
+    <div class="thead">
+      <span class="tdot"></span>
+      <span class="tlabel">${p.origin==='trigger'?'⚡ business notification':'🕐 business notification'}</span>
+      <button class="tclose" title="dismiss">✕</button>
+    </div>
+    <div class="tnoticed">${esc(p.signal_title)}</div>
+    <div class="tfix">I looked at <b>${esc(p.flow_name)}</b> and ${verb}.
+      ${esc(p.headline)} — does this look right?</div>`;
+  t.appendChild(body);
+
+  const acts = el('div','tactions');
+  const ok = el('button','primary','✓ Approve');
+  const no = el('button',null,'Not right');
+  const see = el('button',null,'See the change');
+  acts.appendChild(ok); acts.appendChild(no); acts.appendChild(see);
+  t.appendChild(acts);
+
+  body.querySelector('.tclose').onclick = () => t.remove();
+  see.onclick = () => { S.view='proposals'; select(p.id);
+                        document.querySelector('.col')?.scrollTo(0,0); };
+
+  ok.onclick = async () => {
+    ok.disabled = no.disabled = true;
+    ok.innerHTML = '<span class="spin"></span> applying…';
+    const res = await api(`/proposals/${p.id}/approve`, {});
+    const r = res.result || {};
+    // Resolve in place, so it is obvious that clicking Approve changed
+    // something rather than just dismissing a card.
+    t.className = 'toast done';
+    t.innerHTML = `<div class="tdone">✓ <span>${
+      p.kind==='campaign'
+        ? `Sent to <b>${res.proposal.sent_to}</b> people`
+        : `Applied — <b>${esc(r.name||p.flow_name)}</b> is now v${r.version||''}`
+    }</span></div>`;
+    await refresh(); if(S.sel===p.id) await select(p.id); else render();
+    setTimeout(() => t.remove(), 4200);
+  };
+
+  no.onclick = () => {
+    acts.remove();
+    const box = el('div');
+    const ta = el('textarea','tfb');
+    ta.placeholder = "What's wrong with it? e.g. our donors are older, don't use SMS";
+    const row = el('div','tactions');
+    const send = el('button','primary','Send feedback');
+    const cancel = el('button',null,'Cancel');
+    row.appendChild(send); row.appendChild(cancel);
+    box.appendChild(ta); box.appendChild(row);
+    t.appendChild(box);
+    ta.focus();
+
+    cancel.onclick = () => { box.remove(); t.appendChild(acts); };
+    send.onclick = async () => {
+      const txt = ta.value.trim(); if(!txt){ ta.focus(); return; }
+      send.disabled = cancel.disabled = true;
+      send.innerHTML = '<span class="spin"></span> revising…';
+      const res = await api(`/proposals/${p.id}/reject`, {feedback: txt});
+      box.remove();
+      const rev = res.proposal.revisions[res.proposal.revisions.length-1];
+      t.className = 'toast done';
+      t.innerHTML = `<div class="tdone">↻ <span>Revised — <b>${esc(rev.headline)}</b></span></div>`
+        + (res.learned?.length
+            ? `<div class="tlearned"><b>Noted, so you won't have to say it again:</b><br>`
+              + res.learned.map(c => `· ${esc(c.rule)}`).join('<br>') + `</div>`
+            : '');
+      const more = el('div','tactions');
+      const look = el('button',null,'See revision '+rev.n);
+      look.onclick = () => { S.view='proposals'; select(p.id); };
+      more.appendChild(look); t.appendChild(more);
+      await refresh(); if(S.sel===p.id) await select(p.id); else render();
+    };
+  };
+  return t;
+}
+
+function notify(p){
+  if(seen.has(p.id)) return;
+  seen.add(p.id);
+  const stack = $('#toasts');
+  stack.prepend(toastFor(p));
+  // Never let the stack bury the UI.
+  while(stack.children.length > 3) stack.lastChild.remove();
+}
+
+async function poll(){
+  try{
+    const d = await api('/proposals');
+    S.proposals = d.proposals;
+    // Only genuinely new, still-open proposals interrupt.
+    d.proposals.filter(p => p.status === 'pending' && !seen.has(p.id))
+               .reverse().forEach(notify);
+    if(S.view === 'proposals' && !S.sel) render();
+    await status();
+  }catch(e){ /* polling must never break the page */ }
 }
 
 /* ----------------------------------------------------------------- wire */
@@ -500,14 +759,29 @@ $('#fire').onclick = async () => {
   if(res.created?.length) await select(res.created[0].id); else render();
 };
 
+$('#arm').onclick = async () => {
+  const b = $('#arm'); b.disabled = true;
+  const res = await api('/demo/arm', {});
+  let left = Math.round(res.in_seconds);
+  b.textContent = `notification in ${left}s…`;
+  const tick = setInterval(() => {
+    left -= 1;
+    if(left <= 0){ clearInterval(tick); b.disabled = false;
+                   b.textContent = 'Arm notification (20s)'; }
+    else b.textContent = `notification in ${left}s…`;
+  }, 1000);
+};
+
 $('#reset').onclick = async () => {
   const b=$('#reset'); b.disabled=true; b.innerHTML='<span class="spin"></span>';
   await api('/reset',{}); S.sel=null; S.detail=null; S.ingest=null;
+  seen.clear(); $('#toasts').innerHTML='';
   await refresh(); b.disabled=false; b.textContent='Reset demo'; render();
 };
 
 (async function init(){
   S.sources = await api('/sources');
+  S.prompts = (await api('/chat/suggestions')).prompts;
   const opts = S.sources.sources.flatMap(s =>
     s.samples.map(x => ({v:`${s.key}|${x.key}`, t:`${s.tool} · ${x.label}`})));
   const KEY = 'fitness|class_no_show';
@@ -515,7 +789,10 @@ $('#reset').onclick = async () => {
   $('#evt').innerHTML = opts.map(o =>
     `<option value="${o.v}">${esc(o.t)}</option>`).join('');
   $('#evt').selectedIndex = 0;
-  await refresh(); render();
+  await refresh();
+  S.proposals.forEach(p => seen.add(p.id));
+  render();
+  pollTimer = setInterval(poll, 4000);
 })();
 </script>
 </body>
