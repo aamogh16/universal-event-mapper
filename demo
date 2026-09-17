@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Demo driver. Usage: ./demo <command> [args]
+#   ./demo --help   to see everything
+cd "$(dirname "$0")"
+exec .venv/bin/python -m universal_events.cli "$@"
