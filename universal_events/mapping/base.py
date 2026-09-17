@@ -19,6 +19,15 @@ Strategy = Literal["config", "llm", "heuristic"]
 
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 
+# Preserved verbatim by humanize(). A length rule can't do this job: it would
+# keep "NO" and "SHOW" from NO_SHOW while a whitelist keeps only real acronyms.
+ACRONYMS = frozenset(
+    {
+        "RSVP", "SMS", "ACH", "USD", "EUR", "GBP", "CAD", "AUD", "ID", "VIP",
+        "POS", "CRM", "SKU", "DPT", "NPI", "PT", "OT", "MD", "DDS", "CEU",
+    }
+)
+
 
 class FieldTrace(BaseModel):
     """One source-field -> destination decision.
@@ -155,8 +164,12 @@ def humanize(raw: str) -> str:
         lower = word.lower()
         if i > 0 and lower in small:
             words.append(lower)
-        elif word.isupper() and len(word) <= 4:
-            words.append(word)  # preserve acronyms like RSVP, SMS
+        elif word in ACRONYMS:
+            words.append(word)
+        elif word.isupper():
+            # SCREAMING_CASE values (COMPLETED, NO_SHOW) need full title-casing;
+            # uppercasing only the first letter would leave "COMPLETED" intact.
+            words.append(word.capitalize())
         else:
             words.append(word[:1].upper() + word[1:])
     return " ".join(words)

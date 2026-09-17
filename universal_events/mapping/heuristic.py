@@ -41,11 +41,18 @@ ENTITY_WORDS = (
     "invitee", "visit", "class", "order", "invoice", "payment", "claim", "lead",
 )
 
-STATUS_KEY_HINTS = (
-    "status", "state", "outcome", "disposition", "dispositioncode", "bookingstatus",
-    "eventtype", "event_type", "event", "action", "recordtype", "record_type",
-    "topic", "entitytype", "entity_type", "type", "verb",
+# Ordered by specificity, strongest first. A generic `type` key is a weak
+# signal and must not beat a real status field: `appointment_type` holds
+# "Wellness Exam + Vaccination" (a category) while `status` holds "confirmed"
+# (what actually happened). Flat first-match ordering picks the wrong one.
+STATUS_HINT_TIERS: tuple[tuple[str, ...], ...] = (
+    ("status", "state", "outcome", "disposition", "dispositioncode", "bookingstatus"),
+    ("eventtype", "event_type", "event", "action", "recordtype", "record_type",
+     "topic", "verb"),
+    ("entitytype", "entity_type", "type"),
 )
+
+STATUS_KEY_HINTS = tuple(hint for tier in STATUS_HINT_TIERS for hint in tier)
 
 # Values that are categories, not things that happened.
 NON_ACTION_VALUES = {
@@ -131,16 +138,20 @@ def _infer_metric(
 ) -> tuple[str, float, str]:
     """Derive an event name. Returns (metric_name, confidence, explanation)."""
 
-    # Collect candidate action words from status-ish keys.
+    # Collect candidate action words, strongest hint tier first, so a real
+    # status field outranks a generic `*_type` category field.
     actions: list[tuple[str, str]] = []  # (value, path)
-    for path, value in leaves:
-        if not isinstance(value, str) or not value.strip():
-            continue
-        if not _key_matches(path, STATUS_KEY_HINTS):
-            continue
-        if _norm(value) in NON_ACTION_VALUES:
-            continue
-        actions.append((value.strip(), path))
+    for tier in STATUS_HINT_TIERS:
+        for path, value in leaves:
+            if not isinstance(value, str) or not value.strip():
+                continue
+            if not _key_matches(path, tier):
+                continue
+            if _norm(value) in NON_ACTION_VALUES:
+                continue
+            candidate = (value.strip(), path)
+            if candidate not in actions:
+                actions.append(candidate)
 
     # A dotted/underscored event type is already a full event name.
     for value, path in actions:
@@ -320,7 +331,8 @@ def map_with_heuristics(payload: dict[str, Any], *, source_hint: str = "") -> Ma
         key = _norm(_last_segment(path))
         if not any(
             token in key
-            for token in ("amount", "total", "price", "cost", "paid", "charged", "revenue")
+            for token in ("amount", "total", "price", "cost", "paid", "charged",
+                          "revenue", "responsibility", "balance", "due")
         ):
             continue
         candidate = _coerce_float(value)
