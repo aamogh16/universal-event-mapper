@@ -1,9 +1,10 @@
-"""FastAPI app + minimal dashboard.  [STUB -- routes not implemented]
+"""FastAPI backend for the demo dashboard.
 
-The app boots and serves /health and the static page so the shell is testable.
-Every functional route returns 501 until pipeline.py lands.
+Run:  ./serve      (or: uvicorn universal_events.api:app --reload)
 
-Run:  uvicorn universal_events.api:app --reload
+Every endpoint returns plain JSON the single-page frontend renders. No build
+step anywhere -- for a recorded demo, a missing toolchain is a bigger risk
+than a nicer framework is a benefit.
 """
 
 from __future__ import annotations
@@ -11,90 +12,281 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from . import seed as seeder
+from . import sources, store
 from .config import PACKAGE_ROOT, settings
 from .klaviyo import KlaviyoClient
-from .sources import SOURCES, UNKNOWN_PAYLOADS
+from .mapping import pipeline
 
-app = FastAPI(
-    title="Universal Event Mapper",
-    description=(
-        "Absorb events from a tool nobody has built an integration for. "
-        "Klaviyo has hundreds of hand-built connectors; this is a generic path "
-        "that needs no per-tool engineering."
-    ),
-    version="0.1.0",
-)
-
+app = FastAPI(title="Composer proactive-agent demo", version="0.1.0")
 WEB_DIR = PACKAGE_ROOT / "web"
 
 
-class TriggerRequest(BaseModel):
-    source_key: str
-    sample_key: str
-    mode: str = "auto"
+def _c():
+    from composer import (audience, feedback, flow_store, patch, proposals,
+                          runners, signals)
+    return audience, feedback, flow_store, patch, proposals, runners, signals
+
+
+# ------------------------------------------------------------------ requests
+
+
+class TriggerReq(BaseModel):
+    source: str
+    sample: str
+
+
+class MapReq(BaseModel):
+    key: str | None = None
+    payload: dict[str, Any] | None = None
     send: bool = True
 
 
-class RawPayloadRequest(BaseModel):
-    payload: dict[str, Any]
-    mode: str = "auto"
-    send: bool = True
+class RejectReq(BaseModel):
+    feedback: str
 
 
-@app.get("/health")
-def health() -> dict[str, Any]:
-    """Preflight. Surfaces whether the demo is wired up before you present."""
+# -------------------------------------------------------------------- status
+
+
+@app.get("/api/status")
+def status() -> dict[str, Any]:
+    *_, proposals, runners, _ = _c()
+    _, _, flow_store, _, proposals, runners, _ = _c()
+    spent = 0.0
+    for p in proposals.all_proposals():
+        for r in p.revisions:
+            spent += r.cost_usd or 0.0
     klaviyo_ok, klaviyo_msg = KlaviyoClient().verify_credentials()
     return {
-        "status": "ok",
-        "klaviyo": {"configured": settings.klaviyo_configured, "reachable": klaviyo_ok,
-                    "detail": klaviyo_msg, "revision": settings.klaviyo_api_revision},
-        "gemini": {"configured": settings.gemini_configured,
-                   "mapping_model": settings.gemini_mapping_model,
-                   "agent_model": settings.gemini_agent_model},
+        "klaviyo": {"ok": klaviyo_ok, "detail": klaviyo_msg,
+                    "revision": settings.klaviyo_api_revision},
+        "provider": settings.active_provider,
+        "model": settings.openai_audit_model,
+        "events": store.count(),
+        "flows": len(flow_store.all_flows()),
+        "proposals": proposals.summary(),
+        "spent_usd": round(spent, 6),
+        "sweep_interval": settings.sweep_interval_seconds,
     }
 
 
-@app.get("/sources")
-def list_sources_endpoint() -> dict[str, Any]:
-    """The demo menu: known sources plus the unknown-vertical payloads."""
+@app.post("/api/reset")
+def reset() -> dict[str, Any]:
+    _, feedback, flow_store, _, proposals, runners, _ = _c()
+    flow_store.reset(); proposals.reset(); feedback.reset(); runners.reset_log()
+    return {"seeded": seeder.seed_demo_history()}
+
+
+# ------------------------------------------------------------------- part one
+
+
+@app.get("/api/sources")
+def list_sources() -> dict[str, Any]:
     return {
         "sources": [
-            {
-                "key": s.key,
-                "display_name": s.display_name,
-                "tool": s.tool,
-                "business_type": s.business_type,
-                "has_config": s.config_name is not None,
-                "samples": [{"key": x.key, "label": x.label} for x in s.samples],
-            }
-            for s in SOURCES.values()
+            {"key": s.key, "display_name": s.display_name, "tool": s.tool,
+             "business_type": s.business_type,
+             "klaviyo_connector": s.klaviyo_connector,
+             "samples": [{"key": x.key, "label": x.label} for x in s.samples]}
+            for s in sources.list_sources()
         ],
-        "unknown_payloads": [
-            {"key": k, "description": v["_description"]} for k, v in UNKNOWN_PAYLOADS.items()
+        "unknown": [
+            {"key": k, "description": v["_description"], "payload": v["payload"]}
+            for k, v in sources.UNKNOWN_PAYLOADS.items()
         ],
     }
 
 
-@app.post("/trigger")
-def trigger(_: TriggerRequest) -> JSONResponse:
-    """Fire one mock source event through the mapper into Klaviyo. TODO."""
-    raise HTTPException(status_code=501, detail="Not implemented: needs pipeline.ingest()")
+@app.post("/api/map")
+def map_payload(req: MapReq) -> dict[str, Any]:
+    if req.key:
+        spec = sources.UNKNOWN_PAYLOADS.get(req.key)
+        if not spec:
+            raise HTTPException(404, f"no payload {req.key!r}")
+        payload = spec["payload"]
+    elif req.payload:
+        payload = req.payload
+    else:
+        raise HTTPException(400, "provide key or payload")
+
+    res = pipeline.ingest(payload, send=req.send, persist=False)
+    m = res.mapping
+    d = res.delivery
+    return {
+        "payload": payload,
+        "mapping": {
+            "strategy": m.strategy, "confidence": m.confidence,
+            "chain": res.fallback_chain, "detected_config": res.detected_config,
+            "metric_name": m.metric_name, "reasoning": m.reasoning,
+            "identity": m.identity.model_dump(), "properties": m.properties,
+            "value": m.value, "value_currency": m.value_currency,
+            "traces": [t.model_dump() for t in m.field_traces],
+            "warnings": m.warnings,
+        },
+        "klaviyo": None if not d else {
+            "ok": d.ok, "summary": d.summary, "status_code": d.status_code,
+            "latency_ms": d.latency_ms, "profile_url": d.profile_url,
+            "request_body": d.request_body,
+        },
+    }
 
 
-@app.post("/ingest")
-def ingest_raw(_: RawPayloadRequest) -> JSONResponse:
-    """Accept an arbitrary payload -- the 'paste something new' demo. TODO."""
-    raise HTTPException(status_code=501, detail="Not implemented: needs pipeline.ingest()")
+# -------------------------------------------------------------------- agent
 
 
-@app.get("/notifications")
-def notifications() -> JSONResponse:
-    """Part 2: proactive business notifications. TODO."""
-    raise HTTPException(status_code=501, detail="Not implemented: needs agent.sweep()")
+def _proposal_json(p: Any, full: bool = False) -> dict[str, Any]:
+    r = p.current
+    out = {
+        "id": p.id, "kind": p.kind, "status": p.status, "origin": p.origin,
+        "flow_id": p.flow_id, "flow_name": p.flow_name, "vertical": p.vertical,
+        "signal_title": p.signal_title, "signal_kind": p.signal_kind,
+        "signal_scope": p.signal_scope, "revision": r.n,
+        "revision_count": p.revision_count, "headline": r.headline,
+        "created_at": p.created_at, "applied_version": p.applied_version,
+        "sent_to": p.sent_to, "corrections_applied": len(p.corrections_applied),
+        "source": r.source, "model": r.model_used, "cost_usd": r.cost_usd,
+        "latency_ms": r.latency_ms, "confidence": r.confidence,
+    }
+    if not full:
+        return out
+    out.update({
+        "context_lines": p.context_lines,
+        "rejection_feedback": p.rejection_feedback,
+        "revisions": [
+            {"n": x.n, "headline": x.headline, "audit_summary": x.audit_summary,
+             "observation": x.observation, "findings": x.findings,
+             "predicted_impact": x.predicted_impact,
+             "ops": [o.describe() for o in x.ops],
+             "diff": [d.model_dump() for d in x.diff],
+             "drafted_campaign": x.drafted_campaign,
+             "prompted_by_feedback": x.prompted_by_feedback,
+             "source": x.source, "model": x.model_used, "cost_usd": x.cost_usd,
+             "latency_ms": x.latency_ms, "confidence": x.confidence,
+             "fallback_reason": x.fallback_reason}
+            for x in p.revisions
+        ],
+    })
+    return out
+
+
+@app.get("/api/signals")
+def get_signals() -> dict[str, Any]:
+    *_, signals = _c()
+    return {"signals": [
+        {"kind": s.kind, "scope": s.scope, "title": s.title, "detail": s.detail,
+         "severity": s.severity, "vertical": s.vertical, "origin": s.origin,
+         "evidence": s.evidence}
+        for s in signals.detect_aggregate()
+    ]}
+
+
+@app.get("/api/proposals")
+def list_proposals() -> dict[str, Any]:
+    *_, proposals, _, _ = _c()
+    return {"proposals": [_proposal_json(p) for p in proposals.all_proposals()]}
+
+
+@app.get("/api/proposals/{proposal_id}")
+def get_proposal(proposal_id: str) -> dict[str, Any]:
+    *_, proposals, _, _ = _c()
+    p = proposals.get(proposal_id)
+    if not p:
+        raise HTTPException(404, "no such proposal")
+    return _proposal_json(p, full=True)
+
+
+@app.post("/api/proposals/{proposal_id}/approve")
+def approve(proposal_id: str) -> dict[str, Any]:
+    *_, proposals, _, _ = _c()
+    p, result = proposals.approve(proposal_id)
+    if not p:
+        raise HTTPException(404, "no such proposal")
+    return {"proposal": _proposal_json(p, full=True), "result": result}
+
+
+@app.post("/api/proposals/{proposal_id}/reject")
+def reject(proposal_id: str, req: RejectReq) -> dict[str, Any]:
+    _, feedback, _, _, proposals, _, _ = _c()
+    before = {c.id for c in feedback.all_corrections()}
+    p = proposals.reject(proposal_id, req.feedback)
+    if not p:
+        raise HTTPException(404, "no such proposal")
+    learned = [c.model_dump() for c in feedback.all_corrections() if c.id not in before]
+    return {"proposal": _proposal_json(p, full=True), "learned": learned}
+
+
+@app.post("/api/sweep")
+def sweep(campaigns: bool = True) -> dict[str, Any]:
+    _, _, _, _, proposals, runners, signals = _c()
+    made = runners.sweep_once()
+    if campaigns:
+        for s in signals.detect_aggregate():
+            if s.kind in ("lapsed_member", "lapsed_donor"):
+                p = proposals.create_from_signal(s, want_campaign=True)
+                if p:
+                    made.append(p)
+    return {"created": [_proposal_json(p) for p in made]}
+
+
+@app.post("/api/trigger")
+def trigger(req: TriggerReq) -> dict[str, Any]:
+    _, _, _, _, _, runners, _ = _c()
+    try:
+        src = sources.get_source(req.source)
+        payload = src.build(req.sample)
+    except KeyError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    res = pipeline.ingest(payload, source_key=req.source, send=True)
+    m, d = res.mapping, res.delivery
+    made = runners.on_event(m.identity.primary, m.metric_name, source_key=req.source)
+    return {
+        "tool": src.tool,
+        "payload": payload,
+        "mapping": {"metric_name": m.metric_name, "strategy": m.strategy,
+                    "profile": m.identity.primary,
+                    "detected_config": res.detected_config},
+        "klaviyo": None if not d else {"ok": d.ok, "summary": d.summary,
+                                       "profile_url": d.profile_url},
+        "created": [_proposal_json(p) for p in made],
+    }
+
+
+@app.get("/api/corrections")
+def corrections() -> dict[str, Any]:
+    _, feedback, *_ = _c()
+    return {"corrections": [c.model_dump() for c in feedback.all_corrections()]}
+
+
+@app.get("/api/flows")
+def flows() -> dict[str, Any]:
+    _, _, flow_store, patch, *_ = _c()
+    return {
+        "flows": [
+            {"id": f["id"], "name": f["name"], "version": f["version"],
+             "status": f["status"], "vertical": f.get("vertical"),
+             "handles_signals": f.get("handles_signals") or [],
+             "outline": patch.render_outline(f)}
+            for f in flow_store.all_flows()
+        ],
+        "history": flow_store.history(),
+    }
+
+
+@app.get("/api/runs")
+def runs() -> dict[str, Any]:
+    _, _, _, _, _, runners, _ = _c()
+    return {"runs": [
+        {"origin": r.origin, "clock": r.clock, "at": r.at,
+         "signals_found": r.signals_found, "proposals_created": r.proposals_created,
+         "duration_ms": r.duration_ms, "detail": r.detail,
+         "scope": "one profile" if r.origin == "trigger" else "all profiles + windows"}
+        for r in runners.run_log(limit=40)
+    ]}
 
 
 @app.get("/")
