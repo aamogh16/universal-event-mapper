@@ -89,11 +89,9 @@ def generate(prompt: str) -> dict[str, Any]:
     usage = getattr(response, "usage", None)
     tin = getattr(usage, "input_tokens", None) if usage else None
     tout = getattr(usage, "output_tokens", None) if usage else None
-    cost = None
-    if tin and tout:
-        from .auditor import PRICE_IN, PRICE_OUT
+    from .auditor import _cost
 
-        cost = tin / 1e6 * PRICE_IN + tout / 1e6 * PRICE_OUT
+    cost = _cost(settings.openai_audit_model, tin, tout)
 
     return {
         "ok": True,

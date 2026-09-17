@@ -28,11 +28,27 @@ from .context import ContextBundle
 from .patch import EditOp, apply_patch, validate_flow
 
 # gpt-5-nano, USD per 1M tokens.
-# gpt-5.4-mini, USD per 1M tokens. Chosen over gpt-5-nano on measurement:
-# nano burned ~11k reasoning tokens per audit, took 77s, and still missed the
-# obvious finding. 5.4-mini answered in ~6s for a third of the cost.
-PRICE_IN = 0.25
-PRICE_OUT = 2.00
+# USD per 1M tokens, per model. A table rather than two constants because
+# hardcoding one model's prices meant every displayed cost was understated
+# by ~2.5x the moment the default model changed.
+#
+# Model choice was made on measurement, not price: gpt-5-nano burned ~11k
+# reasoning tokens per audit, took 77s, and still missed the obvious finding.
+# gpt-5.4-mini answers in ~5s and gets it right.
+PRICING: dict[str, tuple[float, float]] = {
+    "gpt-5.4-mini": (0.75, 4.50),
+    "gpt-5.4-nano": (0.20, 1.25),
+    "gpt-5-mini": (0.25, 2.00),
+    "gpt-5-nano": (0.05, 0.40),
+    "gpt-4.1-mini": (0.40, 1.60),
+    "gpt-4.1-nano": (0.10, 0.40),
+}
+DEFAULT_PRICE = (0.75, 4.50)
+
+
+def price_for(model: str) -> tuple[float, float]:
+    """(input, output) USD per 1M tokens. Unknown models fall back safely high."""
+    return PRICING.get(model, DEFAULT_PRICE)
 
 # Fields that must end up numeric when the patch is applied.
 NUMERIC_FIELDS = {"hours", "duration_hours", "days"}
@@ -277,11 +293,16 @@ def _ask(system: str, user: str, schema: type) -> tuple[Any, dict[str, Any]]:
         "model_used": settings.openai_audit_model,
         "input_tokens": tin,
         "output_tokens": tout,
-        "cost_usd": (tin / 1e6 * PRICE_IN + tout / 1e6 * PRICE_OUT)
-        if tin is not None and tout is not None
-        else None,
+        "cost_usd": _cost(settings.openai_audit_model, tin, tout),
         "latency_ms": int((time.monotonic() - started) * 1000),
     }
+
+
+def _cost(model: str, tin: int | None, tout: int | None) -> float | None:
+    if tin is None or tout is None:
+        return None
+    price_in, price_out = price_for(model)
+    return tin / 1e6 * price_in + tout / 1e6 * price_out
 
 
 def _usable() -> bool:
