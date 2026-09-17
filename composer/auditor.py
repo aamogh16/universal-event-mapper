@@ -184,10 +184,15 @@ class AuditOutput(BaseModel):
     # rather than patch one. Composer's native unit is a generated campaign
     # or flow, so this is the more product-shaped proposal of the two.
     drafted_flow: dict[str, Any] | None = None
+    drafted_campaign: dict[str, Any] | None = None
 
     @property
     def kind(self) -> str:
-        return "create" if self.drafted_flow else "patch"
+        if self.drafted_campaign:
+            return "campaign"
+        if self.drafted_flow:
+            return "create"
+        return "patch"
 
     @property
     def cost_label(self) -> str:
@@ -670,5 +675,173 @@ def _draft_with_rules(bundle: ContextBundle, reason: str | None = None) -> Audit
         confidence=0.4,
         source="rules",
         drafted_flow=flow,
+        fallback_reason=reason,
+    )
+
+
+# -------------------------------------------------------------- campaign path
+
+class DraftedCampaign(BaseModel):
+    """A one-off send, drafted and awaiting permission.
+
+    Distinct from a flow: a flow handles everyone who enters a condition from
+    now on, while a campaign clears the people already in it. Creating a flow
+    does nothing for the nine members who went quiet last month, which is why
+    both proposals exist.
+    """
+
+    name: str = Field(description="Internal campaign name")
+    channel: Literal["email", "sms"] = Field(description="email unless brevity matters")
+    subject: str = Field(description="Subject line; empty string for SMS")
+    body: str = Field(
+        description="The full message. Use {{ first_name }}, never a real name."
+    )
+    send_timing: str = Field(description='e.g. "now" or "tomorrow 10am local time"')
+    observation: str
+    rationale: str = Field(description="Why send this, to these people, now")
+    predicted_impact: str
+    confidence: float
+    learned_rules: list[str] = Field(default_factory=list)
+    learned_rule_is_global: bool = False
+
+
+CAMPAIGN_SYSTEM_PROMPT = SYSTEM_PROMPT.split("Edit operation reference:")[0] + """
+You are drafting a ONE-OFF CAMPAIGN, not an automation.
+
+The business has people who ALREADY match a condition. A new flow would only
+catch future cases, so these people need a direct send now.
+
+Rules:
+- The audience size is given to you. It was counted by query. Use that number;
+  never invent or round it.
+- Write the complete message, ready to send. No placeholders, no "[insert X]".
+- Use {{ first_name }} for personalisation. Never a real name.
+- Respect the operating constraints absolutely, including channel choice. If a
+  constraint forbids SMS, channel must be "email".
+- Earn the send. These are real people who will receive this, so if the message
+  would not be worth their attention, say so in rationale and set a low
+  confidence."""
+
+
+def propose_campaign(bundle: ContextBundle, aud: Any) -> AuditOutput:
+    """Draft a one-off send to clear the existing backlog."""
+    if not aud.size:
+        return AuditOutput(
+            headline="No one currently matches this condition",
+            observation=bundle.signal.title,
+            audit_summary="A campaign needs an existing audience; there is none.",
+            confidence=0.0,
+            source="rules",
+        )
+
+    if settings.active_provider != "openai" or not settings.openai_configured:
+        return _campaign_with_rules(bundle, aud, reason="no OpenAI key configured")
+
+    from .audience import render_for_prompt as render_audience
+
+    prompt = (
+        bundle.to_prompt()
+        + "\n## The audience for this send\n"
+        + render_audience(aud)
+        + "\n\n## Your task\n"
+        "Draft a one-off campaign to these people. A flow would only catch "
+        "future cases; these are already in this state. Leave learned_rules empty."
+    )
+    try:
+        started = time.monotonic()
+        response = _client().responses.parse(
+            model=settings.openai_audit_model,
+            input=[
+                {"role": "system", "content": CAMPAIGN_SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            text_format=DraftedCampaign,
+        )
+        latency = int((time.monotonic() - started) * 1000)
+        draft = response.output_parsed
+        if draft is None:
+            raise RuntimeError("model returned no parsable campaign")
+
+        # Enforce learned channel constraints in code, not just in the prompt.
+        blocked = {c.rule.lower() for c in bundle.corrections}
+        channel = draft.channel
+        forced = None
+        if channel == "sms" and any("sms" in rule for rule in blocked):
+            channel = "email"
+            forced = "channel forced to email by a learned correction"
+
+        step = {"type": channel, "body": draft.body, "subject": draft.subject}
+        fixes = _detemplate([dict(step, id="c1")], bundle)
+
+        usage = getattr(response, "usage", None)
+        tin = getattr(usage, "input_tokens", None) if usage else None
+        tout = getattr(usage, "output_tokens", None) if usage else None
+        cost = (tin / 1e6 * PRICE_IN + tout / 1e6 * PRICE_OUT) if tin and tout else None
+
+        campaign = {
+            "name": draft.name,
+            "channel": channel,
+            "subject": draft.subject if channel == "email" else "",
+            "body": draft.body,
+            "send_timing": draft.send_timing,
+            "audience_description": aud.description,
+            "audience_size": aud.size,          # from the query, not the model
+            "audience_basis": aud.basis,
+            "audience_sample": aud.sample_names,
+            "_copy_fixes": fixes,
+            "_forced": forced,
+        }
+        return AuditOutput(
+            headline=f"Drafted a {channel} to {aud.size} people — send it?",
+            observation=draft.observation,
+            audit_summary=draft.rationale,
+            findings=[
+                f"{aud.size} profiles already match: {aud.description}.",
+                "A new flow would only catch future cases, not this backlog.",
+            ]
+            + ([forced] if forced else []),
+            predicted_impact=draft.predicted_impact,
+            confidence=draft.confidence,
+            source="llm",
+            model_used=settings.openai_audit_model,
+            input_tokens=tin,
+            output_tokens=tout,
+            cost_usd=cost,
+            latency_ms=latency,
+            drafted_campaign=campaign,
+        )
+    except Exception as exc:
+        return _campaign_with_rules(
+            bundle, aud, reason=f"{type(exc).__name__}: {exc}"[:200]
+        )
+
+
+def _campaign_with_rules(
+    bundle: ContextBundle, aud: Any, reason: str | None = None
+) -> AuditOutput:
+    """Offline campaign shell. Copy is explicitly NOT fabricated."""
+    return AuditOutput(
+        headline=f"{aud.size} people match — campaign needs copy",
+        observation=f"{bundle.signal.title}. {bundle.signal.detail}",
+        audit_summary=(
+            f"{aud.size} profiles already match: {aud.description}. The audience "
+            "and timing are resolved, but the message body is marked [NEEDS COPY] "
+            "because it was produced without a model."
+        ),
+        findings=[f"Audience rule: {aud.basis}"],
+        predicted_impact="Clears the existing backlog once copy is written.",
+        confidence=0.3,
+        source="rules",
+        drafted_campaign={
+            "name": f"{(bundle.signal.vertical or 'Account').title()} Re-Engagement",
+            "channel": "email",
+            "subject": "[NEEDS COPY]",
+            "body": "[NEEDS COPY] Written by the agent when a model is available.",
+            "send_timing": "after review",
+            "audience_description": aud.description,
+            "audience_size": aud.size,
+            "audience_basis": aud.basis,
+            "audience_sample": aud.sample_names,
+        },
         fallback_reason=reason,
     )
