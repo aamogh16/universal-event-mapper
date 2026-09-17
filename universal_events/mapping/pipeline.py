@@ -113,8 +113,6 @@ def map_payload(
             from .llm_mapper import map_with_llm
 
             return map_with_llm(payload), chain, detected
-        except NotImplementedError:
-            chain.append("llm not implemented yet")
         except Exception as exc:
             chain.append(f"llm failed ({type(exc).__name__})")
 
