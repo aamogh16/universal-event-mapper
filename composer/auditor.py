@@ -25,7 +25,7 @@ from universal_events.config import settings
 
 from . import rules
 from .context import ContextBundle
-from .patch import EditOp, apply_patch
+from .patch import EditOp, apply_patch, validate_flow
 
 # gpt-5-nano, USD per 1M tokens.
 # gpt-5.4-mini, USD per 1M tokens. Chosen over gpt-5-nano on measurement:
@@ -116,15 +116,48 @@ class LLMAudit(BaseModel):
     predicted_impact: str = Field(description="What changes if this is approved")
     ops: list[ProposedOp] = Field(description="The concrete edits to make")
     confidence: float = Field(description="0 to 1")
-    learned_rule: str | None = Field(
-        default=None,
-        description="Only when revising: the durable lesson from the user's feedback, "
-        "as a short imperative. Null otherwise.",
+    learned_rules: list[str] = Field(
+        default_factory=list,
+        description="Only when revising: EVERY durable lesson in the user's "
+        "feedback, one short imperative each. A single rejection often carries "
+        "several ('no SMS' AND 'never ask within 30 days') -- return all of "
+        "them, not just the first. Empty list otherwise.",
     )
     learned_rule_is_global: bool = Field(
         default=False,
-        description="True if the lesson applies to every vertical, false if only this one",
+        description="True ONLY if the lessons apply to every industry. Anything "
+        "tied to this business type (donations, class bookings, appointments) is "
+        "NOT global -- leave false.",
     )
+
+
+class DraftedFlow(BaseModel):
+    """A whole new automation, for when nothing covers the signal.
+
+    Copy must be templated. This flow will run for every member who matches
+    the trigger, so a hardcoded name would greet all of them wrong.
+    """
+
+    name: str = Field(description="Short flow name a marketer would recognise")
+    trigger_kind: Literal["metric", "segment"] = Field(
+        description="'segment' when the trigger is a state like going quiet "
+        "(no event fires for an absence); 'metric' when a real event starts it"
+    )
+    trigger_value: str = Field(
+        description="Metric name, or the segment definition e.g. "
+        "'Members with no booking in 21 days'"
+    )
+    steps_json: str = Field(
+        description="JSON array of step objects. Types: delay, email, sms, split, "
+        'update_profile. e.g. [{"type":"delay","hours":24},'
+        '{"type":"email","subject":"...","body":"..."}]'
+    )
+    observation: str
+    rationale: str = Field(description="Why this flow, and why it is needed at all")
+    predicted_impact: str
+    confidence: float
+    learned_rules: list[str] = Field(default_factory=list)
+    learned_rule_is_global: bool = False
 
 
 class AuditOutput(BaseModel):
@@ -147,6 +180,14 @@ class AuditOutput(BaseModel):
     # within 30 days"). Storing only the first silently loses the rest.
     learned_rules: list[str] = Field(default_factory=list)
     fallback_reason: str | None = None
+    # Set instead of `ops` when the proposal is to CREATE an automation
+    # rather than patch one. Composer's native unit is a generated campaign
+    # or flow, so this is the more product-shaped proposal of the two.
+    drafted_flow: dict[str, Any] | None = None
+
+    @property
+    def kind(self) -> str:
+        return "create" if self.drafted_flow else "patch"
 
     @property
     def cost_label(self) -> str:
@@ -175,6 +216,10 @@ suggestions. If a constraint forbids something, do not propose it, and do not \
 argue about it.
 - Write copy in the voice of the actual business. A dental practice does not say \
 "shop now"; a nonprofit does not say "your order".
+- NEVER hardcode a person's name, class, or detail into copy. A flow runs for \
+hundreds of people. Use {{ first_name }}, never "Hi Jordan". The profile you \
+are shown is one EXAMPLE of who will receive this, not the only recipient.
+- Any SMS step must include "send_if": "sms_consent == true".
 - Explain WHY the current flow mishandles this specific signal, not generic \
 best practice.
 
@@ -300,9 +345,9 @@ def _finalise(
         ops=ops,
         confidence=audit.confidence,
         source="llm",
-        learned_rule=audit.learned_rule,
+        learned_rule=audit.learned_rules[0] if audit.learned_rules else None,
         learned_rule_is_global=audit.learned_rule_is_global,
-        learned_rules=[audit.learned_rule] if audit.learned_rule else [],
+        learned_rules=list(audit.learned_rules),
         **meta,
     )
 
@@ -317,7 +362,7 @@ def propose(bundle: ContextBundle) -> AuditOutput:
         + "\n## Your task\n"
         "Audit the flow above against what was noticed. Identify why this flow "
         "mishandles this specific signal, then propose the concrete edits that "
-        "fix it. Set learned_rule to null."
+        "fix it. Leave learned_rules empty."
     )
     try:
         audit, meta = _call_llm(prompt)
@@ -345,9 +390,10 @@ def revise(
         "simply retry the same idea. If the feedback rules something out, remove "
         "it entirely rather than softening it. Keep the parts of your previous "
         "proposal the feedback did not object to.\n"
-        "Also set learned_rule to a short imperative capturing the durable lesson "
-        "so you never need to be told this again, and set learned_rule_is_global "
-        "to true only if it applies beyond this vertical."
+        "Also fill learned_rules with EVERY durable lesson in this feedback -- "
+        "one short imperative each -- so you never need to be told any of them "
+        "again. If the user objected to two things, return two rules. Set "
+        "learned_rule_is_global to true only if the lessons are industry-agnostic."
     )
     try:
         audit, meta = _call_llm(prompt)
@@ -420,5 +466,209 @@ def _revise_with_rules(
         learned_rule=learned[0] if learned else None,
         learned_rule_is_global=False,
         learned_rules=learned,
+        fallback_reason=reason,
+    )
+
+
+# ---------------------------------------------------------------- create path
+
+DRAFT_SYSTEM_PROMPT = SYSTEM_PROMPT.replace(
+    "then propose a specific fix.",
+    "and when NO automation covers it, you draft a new one.",
+) + """
+
+You are drafting a NEW automation because nothing in the account handles this
+signal. Additional rules:
+- Keep it short. Three to five steps. A marketer must be able to read it at a
+  glance and take responsibility for it.
+- Choose the trigger honestly. An absence ("stopped booking", "went quiet")
+  fires no event, so its trigger_kind is "segment", not "metric". Only use
+  "metric" when a real event starts the flow.
+- Write the actual copy, in this business's voice. No placeholders.
+- Do not duplicate what an existing flow already does."""
+
+
+COPY_FIELDS = ("subject", "body", "cta", "preview")
+
+
+def _detemplate(steps: list[dict], bundle: ContextBundle) -> list[str]:
+    """Replace a leaked example name with a merge tag. Returns what it fixed.
+
+    Defence in depth: the prompt forbids hardcoding names, but a flow that
+    greets every member as "Jordan" is bad enough to be worth catching in code
+    rather than trusting instructions.
+    """
+    fixed: list[str] = []
+    names = {
+        e.first_name for e in bundle.profile_events if getattr(e, "first_name", None)
+    }
+    if bundle.signal.profile_name:
+        names.add(bundle.signal.profile_name.split()[0])
+    names = {n for n in names if n and len(n) > 2}
+    if not names:
+        return fixed
+
+    for step in steps:
+        for field in COPY_FIELDS:
+            text = step.get(field)
+            if not isinstance(text, str):
+                continue
+            for name in names:
+                if re.search(rf"\b{re.escape(name)}\b", text):
+                    text = re.sub(rf"\b{re.escape(name)}\b", "{{ first_name }}", text)
+                    fixed.append(f"{step.get('id', '?')}.{field}: {name!r} -> merge tag")
+            step[field] = text
+    return fixed
+
+
+def _draft_to_flow(draft: DraftedFlow, bundle: ContextBundle) -> dict:
+    """Turn the model's draft into a flow dict, assigning safe step ids."""
+    try:
+        steps = json.loads(draft.steps_json)
+    except ValueError as exc:
+        raise RuntimeError(f"drafted steps were not valid JSON: {exc}") from exc
+    if not isinstance(steps, list) or not steps:
+        raise RuntimeError("drafted flow had no steps")
+
+    clean: list[dict[str, Any]] = []
+    for index, raw in enumerate(steps, start=1):
+        if not isinstance(raw, dict):
+            continue
+        step = dict(raw)
+        step["id"] = f"s{index}"
+        # Consent gate is non-negotiable on SMS.
+        if step.get("type") == "sms":
+            step.setdefault("send_if", "sms_consent == true")
+        clean.append(step)
+
+    detemplated = _draft_to_flow_fixes = _detemplate(clean, bundle)
+
+    return {
+        "name": draft.name,
+        "vertical": bundle.signal.vertical,
+        "business": (bundle.sibling_flows[0].get("business") if bundle.sibling_flows else None),
+        "status": "draft",
+        "version": 1,
+        "trigger": (
+            {"type": "metric", "metric": draft.trigger_value}
+            if draft.trigger_kind == "metric"
+            else {"type": "segment", "segment": draft.trigger_value}
+        ),
+        "handles_signals": [bundle.signal.kind],
+        "steps": clean,
+        "_copy_fixes": detemplated,
+    }
+
+
+def propose_new_flow(bundle: ContextBundle) -> AuditOutput:
+    """Draft a whole automation because nothing covers the signal."""
+    if settings.active_provider != "openai" or not settings.openai_configured:
+        return _draft_with_rules(bundle, reason="no OpenAI key configured")
+
+    prompt = (
+        bundle.to_prompt()
+        + "\n## Your task\n"
+        "Draft a new automation that handles the signal above. Explain why the "
+        "business needs it, not just what it contains. Leave learned_rules empty."
+    )
+    try:
+        started = time.monotonic()
+        client = _client()
+        response = client.responses.parse(
+            model=settings.openai_audit_model,
+            input=[
+                {"role": "system", "content": DRAFT_SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            text_format=DraftedFlow,
+        )
+        latency = int((time.monotonic() - started) * 1000)
+        draft = response.output_parsed
+        if draft is None:
+            raise RuntimeError("model returned no parsable draft")
+
+        flow = _draft_to_flow(draft, bundle)
+        problems = validate_flow(flow)
+        if problems:
+            raise RuntimeError("drafted flow invalid: " + "; ".join(problems))
+
+        usage = getattr(response, "usage", None)
+        tin = getattr(usage, "input_tokens", None) if usage else None
+        tout = getattr(usage, "output_tokens", None) if usage else None
+        cost = (tin / 1e6 * PRICE_IN + tout / 1e6 * PRICE_OUT) if tin and tout else None
+
+        return AuditOutput(
+            headline=f"No automation handles this — drafted \"{draft.name}\"",
+            observation=draft.observation,
+            audit_summary=draft.rationale,
+            findings=[
+                f"No existing flow is responsible for '{bundle.signal.kind}'.",
+                f"Trigger chosen: {draft.trigger_kind} — {draft.trigger_value}",
+            ],
+            predicted_impact=draft.predicted_impact,
+            confidence=draft.confidence,
+            source="llm",
+            model_used=settings.openai_audit_model,
+            input_tokens=tin,
+            output_tokens=tout,
+            cost_usd=cost,
+            latency_ms=latency,
+            drafted_flow=flow,
+        )
+    except Exception as exc:
+        return _draft_with_rules(bundle, reason=f"{type(exc).__name__}: {exc}"[:200])
+
+
+def _draft_with_rules(bundle: ContextBundle, reason: str | None = None) -> AuditOutput:
+    """Offline skeleton. Structure only -- copy is explicitly left unwritten.
+
+    This deliberately does NOT fabricate marketing copy. Template text passed
+    off as authored work is the thing that makes a rules fallback dishonest, so
+    the placeholders here are visible and the proposal says so.
+    """
+    signal = bundle.signal
+    days = (signal.evidence or {}).get("days_quiet") or 21
+    blocked = {c.rule.lower() for c in bundle.corrections}
+    steps: list[dict[str, Any]] = [
+        {"id": "s1", "type": "delay", "hours": 24},
+        {
+            "id": "s2",
+            "type": "email",
+            "subject": "[NEEDS COPY] Re-engagement subject line",
+            "body": "[NEEDS COPY] Written by the agent when a model is available.",
+        },
+    ]
+    if not any("sms" in rule for rule in blocked):
+        steps.append(
+            {
+                "id": "s3",
+                "type": "sms",
+                "body": "[NEEDS COPY] Short nudge.",
+                "send_if": "sms_consent == true",
+            }
+        )
+
+    flow = {
+        "name": f"{(signal.vertical or 'Account').title()} Re-Engagement",
+        "vertical": signal.vertical,
+        "status": "draft",
+        "version": 1,
+        "trigger": {"type": "segment", "segment": f"No activity in {days} days"},
+        "handles_signals": [signal.kind],
+        "steps": steps,
+    }
+    return AuditOutput(
+        headline=f"No automation handles this — drafted a skeleton ({len(steps)} steps)",
+        observation=f"{signal.title}. {signal.detail}",
+        audit_summary=(
+            "Nothing in the account is responsible for this signal. This is a "
+            "STRUCTURAL skeleton only: the copy is marked [NEEDS COPY] because "
+            "it was generated without a model."
+        ),
+        findings=[f"No existing flow is responsible for '{signal.kind}'."],
+        predicted_impact="Gives the business a starting point for an uncovered case.",
+        confidence=0.4,
+        source="rules",
+        drafted_flow=flow,
         fallback_reason=reason,
     )

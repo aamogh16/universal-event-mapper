@@ -236,9 +236,19 @@ def _fmt_delay(hours: float) -> str:
 
 def render_outline(flow: dict) -> list[str]:
     """A canonical, human-readable outline. Diffs are computed over this."""
+    trigger = flow.get("trigger") or {}
+    # A flow can be started by an event OR by entering a segment. An absence
+    # ("stopped booking") fires no event, so segment triggers are normal and
+    # must render as something other than "None".
+    if trigger.get("metric"):
+        trigger_label = f"event = {trigger['metric']}"
+    elif trigger.get("segment"):
+        trigger_label = f"segment = {trigger['segment']}"
+    else:
+        trigger_label = "(none)"
     lines = [
         f"flow: {flow.get('name')}  (v{flow.get('version')}, {flow.get('status')})",
-        f"trigger: {(flow.get('trigger') or {}).get('metric')}",
+        f"trigger: {trigger_label}",
         "",
     ]
 
