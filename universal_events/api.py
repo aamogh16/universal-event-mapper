@@ -9,6 +9,8 @@ than a nicer framework is a benefit.
 
 from __future__ import annotations
 
+import threading
+import time
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -47,6 +49,24 @@ class MapReq(BaseModel):
 
 class RejectReq(BaseModel):
     feedback: str
+
+
+class ChatReq(BaseModel):
+    prompt: str
+
+
+class ArmReq(BaseModel):
+    """Schedule an event to land after a delay.
+
+    The point of a business notification is that it interrupts you. A button
+    you press and then watch is not an interruption -- so this fires the event
+    N seconds later, letting the notification arrive unprompted while the
+    presenter is mid-sentence about something else.
+    """
+
+    source: str = "fitness"
+    sample: str = "class_no_show"
+    delay_seconds: float = 20.0
 
 
 # -------------------------------------------------------------------- status
@@ -175,13 +195,22 @@ def _proposal_json(p: Any, full: bool = False) -> dict[str, Any]:
 
 @app.get("/api/signals")
 def get_signals() -> dict[str, Any]:
-    *_, signals = _c()
-    return {"signals": [
-        {"kind": s.kind, "scope": s.scope, "title": s.title, "detail": s.detail,
-         "severity": s.severity, "vertical": s.vertical, "origin": s.origin,
-         "evidence": s.evidence}
-        for s in signals.detect_aggregate()
-    ]}
+    audience, _, _, _, _, _, signals = _c()
+    out = []
+    for s in signals.detect_aggregate():
+        aud = audience.resolve(s)
+        out.append({
+            "kind": s.kind, "scope": s.scope, "title": s.title, "detail": s.detail,
+            "severity": s.severity, "vertical": s.vertical, "origin": s.origin,
+            "evidence": s.evidence,
+            # Audience is attached here so the UI can put a counted number
+            # next to whatever the chat path guessed.
+            "audience_size": aud.size,
+            "audience_description": aud.description,
+            "audience_basis": aud.basis,
+            "audience_sample": aud.sample_names,
+        })
+    return {"signals": out}
 
 
 @app.get("/api/proposals")
@@ -254,6 +283,38 @@ def trigger(req: TriggerReq) -> dict[str, Any]:
                                        "profile_url": d.profile_url},
         "created": [_proposal_json(p) for p in made],
     }
+
+
+@app.post("/api/chat")
+def chat(req: ChatReq) -> dict[str, Any]:
+    """The reactive path, for contrast: you ask, it builds."""
+    from composer import chat as chat_mod
+
+    return chat_mod.generate(req.prompt)
+
+
+@app.get("/api/chat/suggestions")
+def chat_suggestions() -> dict[str, Any]:
+    from composer import chat as chat_mod
+
+    return {"prompts": chat_mod.SUGGESTED_PROMPTS}
+
+
+@app.post("/api/demo/arm")
+def arm(req: ArmReq) -> dict[str, Any]:
+    """Fire an event after a delay, on a background thread."""
+
+    def later() -> None:
+        time.sleep(max(0.0, req.delay_seconds))
+        try:
+            trigger(TriggerReq(source=req.source, sample=req.sample))
+        except Exception:
+            # A demo aid must never take the server down with it.
+            pass
+
+    threading.Thread(target=later, daemon=True).start()
+    return {"armed": True, "in_seconds": req.delay_seconds,
+            "source": req.source, "sample": req.sample}
 
 
 @app.get("/api/corrections")
