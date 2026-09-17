@@ -21,11 +21,12 @@ from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass, field
+import json
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-from universal_events.config import settings
+from universal_events.config import PROJECT_ROOT, settings
 
 from . import proposals, signals
 
@@ -46,7 +47,32 @@ class RunRecord:
         return self.at[11:19]
 
 
-RUN_LOG: list[RunRecord] = []
+# Persisted to disk: each CLI invocation is a separate process, so an
+# in-memory log would be empty by the time anyone ran `runs` -- which is
+# exactly the command meant to show both patterns side by side.
+LOG_PATH = PROJECT_ROOT / "runs.json"
+
+
+def _load_log() -> list[RunRecord]:
+    if not LOG_PATH.exists():
+        return []
+    try:
+        return [RunRecord(**item) for item in json.loads(LOG_PATH.read_text("utf-8"))]
+    except (ValueError, OSError, TypeError):
+        return []
+
+
+def _append(record: RunRecord) -> None:
+    entries = _load_log()
+    entries.append(record)
+    LOG_PATH.write_text(
+        json.dumps([asdict(e) for e in entries[-200:]], indent=2), "utf-8"
+    )
+
+
+def reset_log() -> None:
+    if LOG_PATH.exists():
+        LOG_PATH.unlink()
 
 
 def _stamp() -> str:
@@ -68,7 +94,7 @@ def on_event(
         if proposal:
             created.append(proposal)
 
-    RUN_LOG.append(
+    _append(
         RunRecord(
             origin="trigger",
             at=_stamp(),
@@ -94,7 +120,7 @@ def sweep_once(vertical: str | None = None) -> list[Any]:
         if proposal:
             created.append(proposal)
 
-    RUN_LOG.append(
+    _append(
         RunRecord(
             origin="sweep",
             at=_stamp(),
@@ -161,5 +187,5 @@ class Sweeper:
 
 
 def run_log(origin: str | None = None, limit: int = 20) -> list[RunRecord]:
-    entries = [r for r in RUN_LOG if origin is None or r.origin == origin]
+    entries = [r for r in _load_log() if origin is None or r.origin == origin]
     return entries[-limit:]

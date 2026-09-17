@@ -228,7 +228,15 @@ def create_from_signal(
                 return None
     elif flow is not None:
         for existing in _load():
-            if existing.flow_id == flow["id"] and existing.status in ("pending", "revised"):
+            # Key on flow AND signal kind. "The 5:30pm class no-show rate
+            # tripled" and "Sam no-showed four times" both target the same
+            # flow but are different findings -- collapsing them on flow id
+            # alone silently swallows every trigger-pattern proposal.
+            if (
+                existing.flow_id == flow["id"]
+                and existing.signal_kind == signal.kind
+                and existing.status in ("pending", "revised")
+            ):
                 return None
     else:
         for existing in _load():
@@ -252,7 +260,13 @@ def create_from_signal(
     proposal = Proposal(
         kind=audit.kind,
         flow_id=flow["id"] if flow else "",
-        flow_name=flow["name"] if flow else (audit.drafted_flow or {}).get("name", "new flow"),
+        flow_name=(
+            flow["name"]
+            if flow
+            else (audit.drafted_campaign or audit.drafted_flow or {}).get(
+                "name", "new automation"
+            )
+        ),
         vertical=(flow or {}).get("vertical") or signal.vertical,
         origin=origin or signal.origin,
         signal_kind=signal.kind,
