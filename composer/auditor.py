@@ -15,6 +15,7 @@ limited, or returns something unappliable, we fall back to rules and say so in
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import Any, Literal
 
@@ -27,8 +28,14 @@ from .context import ContextBundle
 from .patch import EditOp, apply_patch
 
 # gpt-5-nano, USD per 1M tokens.
-PRICE_IN = 0.05
-PRICE_OUT = 0.40
+# gpt-5.4-mini, USD per 1M tokens. Chosen over gpt-5-nano on measurement:
+# nano burned ~11k reasoning tokens per audit, took 77s, and still missed the
+# obvious finding. 5.4-mini answered in ~6s for a third of the cost.
+PRICE_IN = 0.25
+PRICE_OUT = 2.00
+
+# Fields that must end up numeric when the patch is applied.
+NUMERIC_FIELDS = {"hours", "duration_hours", "days"}
 
 Source = Literal["llm", "rules"]
 
@@ -60,18 +67,33 @@ class ProposedOp(BaseModel):
         elif self.value_text is not None:
             value = self.value_text
 
+        # Models sometimes write prose into a numeric field ("12 hours rather
+        # than 3 days"). Coerce rather than reject: a patch that fails to apply
+        # over a formatting slip loses a correct finding.
+        if self.field_name in NUMERIC_FIELDS and isinstance(value, str):
+            found = re.search(r"-?\d+(?:\.\d+)?", value)
+            value = float(found.group()) if found else None
+
         step = None
         if self.new_step_json:
             try:
-                step = json.loads(self.new_step_json)
+                parsed = json.loads(self.new_step_json)
             except ValueError:
-                step = None
+                parsed = None
+            # May arrive as a single object or a list of steps.
+            if isinstance(parsed, list):
+                step = parsed[0] if parsed else None
+            elif isinstance(parsed, dict):
+                step = parsed
 
-        if self.op == "fill_branch" and self.branch_steps_json:
-            try:
-                value = json.loads(self.branch_steps_json)
-            except ValueError:
-                value = []
+        if self.op == "fill_branch":
+            raw = self.branch_steps_json or self.new_step_json
+            if raw:
+                try:
+                    parsed = json.loads(raw)
+                except ValueError:
+                    parsed = []
+                value = parsed if isinstance(parsed, list) else [parsed]
 
         return EditOp(
             op=self.op,
@@ -158,7 +180,9 @@ best practice.
 
 Edit operation reference:
 - set_field: change one field on a step. Use step_id, field_name, and either \
-value_text or value_number. For a delay, field_name is "hours".
+value_text or value_number. For a delay, field_name is "hours" and you MUST \
+use value_number with a bare number of hours (24, not "24 hours" and not \
+"one day"). Never put prose in value_number fields.
 - insert_after: add a step after step_id. Put the new step in new_step_json as \
 a JSON object string, e.g. {"type":"sms","body":"...","send_if":"sms_consent == true"}
 - remove_step: delete step_id.

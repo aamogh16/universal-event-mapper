@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     # which matters more than price for a live demo.
     llm_provider: str = "openai"
     openai_api_key: str = ""
-    openai_audit_model: str = "gpt-5-nano"
+    openai_audit_model: str = "gpt-5.4-mini"
 
     gemini_api_key: str = ""
     gemini_mapping_model: str = "gemini-3.8-flash"
