@@ -68,6 +68,11 @@ class EventSample:
     key: str
     label: str
     build: Callable[[Persona], dict[str, Any]]
+    # Which persona this sample should use. Set where the seeded history makes
+    # one person the point of the scenario -- firing "class no-show" must hit
+    # Sam, who already has two, or the trigger has nothing to escalate.
+    # Random selection made the demo silently non-reproducible.
+    persona_email: str | None = None
 
 
 @dataclass
@@ -95,8 +100,14 @@ class Source:
         raise KeyError(f"{self.key} has no sample {key!r}")
 
     def build(self, key: str, persona: Persona | None = None) -> dict[str, Any]:
-        chosen = persona or random.choice(self.personas)
-        return self.sample(key).build(chosen)
+        sample = self.sample(key)
+        chosen = persona
+        if chosen is None and sample.persona_email:
+            chosen = next(
+                (p for p in self.personas if p.email == sample.persona_email), None
+            )
+        # Deterministic fallback: first persona, never random.
+        return sample.build(chosen or self.personas[0])
 
 
 # --------------------------------------------------------------------------
@@ -285,6 +296,7 @@ FITNESS_SOURCE = Source(
                     "lateCancelled": True,
                 },
             ),
+            persona_email="s.whitfield@protonmail.com",
         ),
     ],
 )
