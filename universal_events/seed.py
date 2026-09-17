@@ -70,9 +70,13 @@ def _event(
 
 def _seed_fitness(rng: random.Random) -> int:
     written = 0
-    members = [
-        ("jordan.avery@gmail.com", "Jordan", "Avery"),
-        ("s.whitfield@protonmail.com", "Sam", "Whitfield"),
+    # Roster is split into disjoint cohorts on purpose. The no-show trend and
+    # the lapsed-member campaign are two different audiences, and if they draw
+    # from the same people the trend's recent events reset everyone's
+    # last_seen and nobody ever looks lapsed.
+    jordan = ("jordan.avery@gmail.com", "Jordan", "Avery")       # lapsed, named
+    sam = ("s.whitfield@protonmail.com", "Sam", "Whitfield")     # repeat no-show
+    active = [                                                   # feed the trend
         ("nina.castellanos@gmail.com", "Nina", "Castellanos"),
         ("owen.brady@outlook.com", "Owen", "Brady"),
         ("priya.n@gmail.com", "Priya", "Nair"),
@@ -84,9 +88,20 @@ def _seed_fitness(rng: random.Random) -> int:
         ("h.tanaka@gmail.com", "Haruki", "Tanaka"),
         ("erin.walsh@outlook.com", "Erin", "Walsh"),
     ]
+    quiet = [                                                    # the backlog
+        ("dev.sharma@gmail.com", "Dev", "Sharma"),
+        ("c.mbeki@outlook.com", "Chidi", "Mbeki"),
+        ("r.antonova@gmail.com", "Rada", "Antonova"),
+        ("j.okamoto@icloud.com", "Jun", "Okamoto"),
+        ("bea.lindqvist@gmail.com", "Bea", "Lindqvist"),
+        ("m.halloran@yahoo.com", "Maeve", "Halloran"),
+        ("s.eriksen@gmail.com", "Stian", "Eriksen"),
+        ("noor.aziz@outlook.com", "Noor", "Aziz"),
+    ]
+    members = [jordan, sam, *active, *quiet]
 
     # --- Scenario A: Jordan books steadily, then stops 23 days ago ----------
-    email, first, last = members[0]
+    email, first, last = jordan
     day = 88.0
     while day >= 24:
         _event(
@@ -114,7 +129,7 @@ def _seed_fitness(rng: random.Random) -> int:
         (12, "Class No-Show", 0, 14),
     ):
         for _ in range(count):
-            email, first, last = rng.choice(members[2:])
+            email, first, last = rng.choice(active)
             _event(
                 email=email, first=first, last=last,
                 metric=metric, when=_ago(rng.uniform(lo, hi)), source="fitness",
@@ -123,7 +138,7 @@ def _seed_fitness(rng: random.Random) -> int:
             written += 1
 
     # --- Scenario C: Sam has 2 recent no-shows; a 3rd fires live ------------
-    email, first, last = members[1]
+    email, first, last = sam
     for days_back in (11, 4):
         _event(
             email=email, first=first, last=last,
@@ -139,8 +154,25 @@ def _seed_fitness(rng: random.Random) -> int:
         )
         written += 1
 
+    # A cohort who quietly stopped coming 22-45 days ago. Jordan is the named
+    # example in the demo, but a campaign to ONE person is not a campaign --
+    # the backlog needs real weight for "send to 8 quiet members" to mean
+    # anything. Their events are all old, so they do not disturb the recent
+    # no-show trend windows.
+    for email, first, last in quiet:
+        start = rng.uniform(70, 95)
+        day = start
+        while day > rng.uniform(22, 45):
+            _event(
+                email=email, first=first, last=last,
+                metric="Class Booked", when=_ago(day), source="fitness",
+                properties={"Class Name": rng.choice(OTHER_CLASSES)},
+            )
+            written += 1
+            day -= rng.choice([4.0, 5.0, 6.0])
+
     # Background: healthy members booking other classes.
-    for email, first, last in members[2:]:
+    for email, first, last in active:
         for _ in range(rng.randint(4, 9)):
             _event(
                 email=email, first=first, last=last,
