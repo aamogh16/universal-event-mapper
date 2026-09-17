@@ -61,10 +61,6 @@ class DeliveryResult:
         return "\n".join(parts)
 
 
-class KlaviyoError(RuntimeError):
-    pass
-
-
 class KlaviyoClient:
     def __init__(
         self,

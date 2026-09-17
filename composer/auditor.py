@@ -251,42 +251,42 @@ A split's condition MUST be an object with field, op and value -- never a
 string like "has_booked == false" -- and at least one branch must have steps."""
 
 
-def _client() -> Any:
+def _ask(system: str, user: str, schema: type) -> tuple[Any, dict[str, Any]]:
+    """One constrained model call. Every path through this module uses it.
+
+    Returns the parsed object plus the cost/latency metadata the UI displays.
+    Raises on failure -- callers decide which deterministic fallback to use.
+    """
     import openai
 
-    return openai.OpenAI(api_key=settings.openai_api_key)
-
-
-def _call_llm(user_prompt: str) -> tuple[LLMAudit, dict[str, Any]]:
     started = time.monotonic()
-    client = _client()
-    response = client.responses.parse(
+    response = openai.OpenAI(api_key=settings.openai_api_key).responses.parse(
         model=settings.openai_audit_model,
-        input=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ],
-        text_format=LLMAudit,
+        input=[{"role": "system", "content": system},
+               {"role": "user", "content": user}],
+        text_format=schema,
     )
-    latency = int((time.monotonic() - started) * 1000)
     parsed = response.output_parsed
     if parsed is None:
         raise RuntimeError("model returned no parsable output")
 
     usage = getattr(response, "usage", None)
-    tokens_in = getattr(usage, "input_tokens", None) if usage else None
-    tokens_out = getattr(usage, "output_tokens", None) if usage else None
-    cost = None
-    if tokens_in is not None and tokens_out is not None:
-        cost = tokens_in / 1e6 * PRICE_IN + tokens_out / 1e6 * PRICE_OUT
-
+    tin = getattr(usage, "input_tokens", None) if usage else None
+    tout = getattr(usage, "output_tokens", None) if usage else None
     return parsed, {
         "model_used": settings.openai_audit_model,
-        "input_tokens": tokens_in,
-        "output_tokens": tokens_out,
-        "cost_usd": cost,
-        "latency_ms": latency,
+        "input_tokens": tin,
+        "output_tokens": tout,
+        "cost_usd": (tin / 1e6 * PRICE_IN + tout / 1e6 * PRICE_OUT)
+        if tin is not None and tout is not None
+        else None,
+        "latency_ms": int((time.monotonic() - started) * 1000),
     }
+
+
+def _usable() -> bool:
+    """Whether the model path is available at all."""
+    return settings.active_provider == "openai" and settings.openai_configured
 
 
 def _from_rules(bundle: ContextBundle, reason: str | None = None) -> AuditOutput:
@@ -366,7 +366,7 @@ def _finalise(
 
 def propose(bundle: ContextBundle) -> AuditOutput:
     """Audit the flow and propose a patch. Never raises."""
-    if settings.active_provider != "openai" or not settings.openai_configured:
+    if not _usable():
         return _from_rules(bundle, reason="no OpenAI key configured")
 
     prompt = (
@@ -377,7 +377,7 @@ def propose(bundle: ContextBundle) -> AuditOutput:
         "fix it. Leave learned_rules empty."
     )
     try:
-        audit, meta = _call_llm(prompt)
+        audit, meta = _ask(SYSTEM_PROMPT, prompt, LLMAudit)
         return _finalise(audit, bundle, meta)
     except Exception as exc:
         return _from_rules(bundle, reason=f"{type(exc).__name__}: {exc}"[:200])
@@ -387,7 +387,7 @@ def revise(
     bundle: ContextBundle, previous_ops: list[EditOp], user_feedback: str
 ) -> AuditOutput:
     """Revise a rejected proposal using the user's feedback."""
-    if settings.active_provider != "openai" or not settings.openai_configured:
+    if not _usable():
         return _revise_with_rules(bundle, previous_ops, user_feedback)
 
     prior = "\n".join(f"- {op.describe()} ({op.rationale})" for op in previous_ops)
@@ -408,7 +408,7 @@ def revise(
         "learned_rule_is_global to true only if the lessons are industry-agnostic."
     )
     try:
-        audit, meta = _call_llm(prompt)
+        audit, meta = _ask(SYSTEM_PROMPT, prompt, LLMAudit)
         return _finalise(audit, bundle, meta)
     except Exception as exc:
         return _revise_with_rules(
@@ -593,7 +593,7 @@ def _draft_to_flow(draft: DraftedFlow, bundle: ContextBundle) -> dict:
 
 def propose_new_flow(bundle: ContextBundle) -> AuditOutput:
     """Draft a whole automation because nothing covers the signal."""
-    if settings.active_provider != "openai" or not settings.openai_configured:
+    if not _usable():
         return _draft_with_rules(bundle, reason="no OpenAI key configured")
 
     prompt = (
@@ -603,30 +603,11 @@ def propose_new_flow(bundle: ContextBundle) -> AuditOutput:
         "business needs it, not just what it contains. Leave learned_rules empty."
     )
     try:
-        started = time.monotonic()
-        client = _client()
-        response = client.responses.parse(
-            model=settings.openai_audit_model,
-            input=[
-                {"role": "system", "content": DRAFT_SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            text_format=DraftedFlow,
-        )
-        latency = int((time.monotonic() - started) * 1000)
-        draft = response.output_parsed
-        if draft is None:
-            raise RuntimeError("model returned no parsable draft")
-
+        draft, meta = _ask(DRAFT_SYSTEM_PROMPT, prompt, DraftedFlow)
         flow = _draft_to_flow(draft, bundle)
         problems = validate_flow(flow)
         if problems:
             raise RuntimeError("drafted flow invalid: " + "; ".join(problems))
-
-        usage = getattr(response, "usage", None)
-        tin = getattr(usage, "input_tokens", None) if usage else None
-        tout = getattr(usage, "output_tokens", None) if usage else None
-        cost = (tin / 1e6 * PRICE_IN + tout / 1e6 * PRICE_OUT) if tin and tout else None
 
         return AuditOutput(
             headline=f"No automation handles this — drafted \"{draft.name}\"",
@@ -639,12 +620,8 @@ def propose_new_flow(bundle: ContextBundle) -> AuditOutput:
             predicted_impact=draft.predicted_impact,
             confidence=draft.confidence,
             source="llm",
-            model_used=settings.openai_audit_model,
-            input_tokens=tin,
-            output_tokens=tout,
-            cost_usd=cost,
-            latency_ms=latency,
             drafted_flow=flow,
+            **meta,
         )
     except Exception as exc:
         return _draft_with_rules(bundle, reason=f"{type(exc).__name__}: {exc}"[:200])
@@ -760,7 +737,7 @@ def propose_campaign(bundle: ContextBundle, aud: Any) -> AuditOutput:
             source="rules",
         )
 
-    if settings.active_provider != "openai" or not settings.openai_configured:
+    if not _usable():
         return _campaign_with_rules(bundle, aud, reason="no OpenAI key configured")
 
     from .audience import render_for_prompt as render_audience
@@ -774,19 +751,7 @@ def propose_campaign(bundle: ContextBundle, aud: Any) -> AuditOutput:
         "future cases; these are already in this state. Leave learned_rules empty."
     )
     try:
-        started = time.monotonic()
-        response = _client().responses.parse(
-            model=settings.openai_audit_model,
-            input=[
-                {"role": "system", "content": CAMPAIGN_SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            text_format=DraftedCampaign,
-        )
-        latency = int((time.monotonic() - started) * 1000)
-        draft = response.output_parsed
-        if draft is None:
-            raise RuntimeError("model returned no parsable campaign")
+        draft, meta = _ask(CAMPAIGN_SYSTEM_PROMPT, prompt, DraftedCampaign)
 
         # Enforce learned channel constraints in code, not just in the prompt.
         blocked = {c.rule.lower() for c in bundle.corrections}
@@ -798,11 +763,6 @@ def propose_campaign(bundle: ContextBundle, aud: Any) -> AuditOutput:
 
         step = {"type": channel, "body": draft.body, "subject": draft.subject}
         fixes = _detemplate([dict(step, id="c1")], bundle)
-
-        usage = getattr(response, "usage", None)
-        tin = getattr(usage, "input_tokens", None) if usage else None
-        tout = getattr(usage, "output_tokens", None) if usage else None
-        cost = (tin / 1e6 * PRICE_IN + tout / 1e6 * PRICE_OUT) if tin and tout else None
 
         campaign = {
             "name": draft.name,
@@ -829,12 +789,8 @@ def propose_campaign(bundle: ContextBundle, aud: Any) -> AuditOutput:
             predicted_impact=draft.predicted_impact,
             confidence=draft.confidence,
             source="llm",
-            model_used=settings.openai_audit_model,
-            input_tokens=tin,
-            output_tokens=tout,
-            cost_usd=cost,
-            latency_ms=latency,
             drafted_campaign=campaign,
+            **meta,
         )
     except Exception as exc:
         return _campaign_with_rules(

@@ -40,14 +40,11 @@ class Settings(BaseSettings):
 
     # --- demo controls ---
     sweep_interval_seconds: int = 60
+    # Run the recurring job on a background thread when the server starts.
+    auto_sweep: bool = True
     rehearse_mode: bool = False
 
     event_db_path: Path = PROJECT_ROOT / "events.db"
-
-    @property
-    def klaviyo_configured(self) -> bool:
-        key = self.klaviyo_private_api_key
-        return bool(key) and not key.startswith("pk_replace")
 
     @property
     def openai_configured(self) -> bool:

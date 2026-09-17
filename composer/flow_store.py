@@ -71,32 +71,6 @@ def flows_for(vertical: str | None = None, trigger_metric: str | None = None) ->
     return result
 
 
-def pick_flow_for_signal(signal: Any) -> dict | None:
-    """Best flow for a signal: exact trigger match first, then same vertical.
-
-    Returning None is meaningful -- it means no flow covers this signal, which
-    is itself a finding worth surfacing rather than an error.
-    """
-    if signal.trigger_metric:
-        exact = flows_for(vertical=signal.vertical, trigger_metric=signal.trigger_metric)
-        if exact:
-            return exact[0]
-
-    by_vertical = flows_for(vertical=signal.vertical)
-    if not by_vertical:
-        return None
-
-    # Prefer a flow whose purpose matches the signal's shape.
-    wants = "lapse" if signal.kind.startswith("lapsed") else "no-show"
-    for flow in by_vertical:
-        name = flow.get("name", "").lower()
-        if wants == "lapse" and any(w in name for w in ("lapse", "win-back", "recall")):
-            return flow
-        if wants == "no-show" and any(w in name for w in ("no-show", "win-back")):
-            return flow
-    return by_vertical[0]
-
-
 def find_covering_flow(signal: Any) -> dict | None:
     """The flow RESPONSIBLE for this signal, or None if nothing is.
 

@@ -223,23 +223,6 @@ def profiles_with_history(
     ]
 
 
-def metric_counts(
-    since_days: int, source_key: str | None = None, path: Path | None = None
-) -> dict[str, int]:
-    """Count events per metric over a window. Feeds aggregate trend detection."""
-    init_db(path)
-    cutoff = (_now() - timedelta(days=since_days)).isoformat()
-    clause = "AND source_key = ?" if source_key else ""
-    args: tuple = (source_key,) if source_key else ()
-    with _connect(path) as conn:
-        rows = conn.execute(
-            f"SELECT metric_name, COUNT(*) AS n FROM events "
-            f"WHERE occurred_at >= ? {clause} GROUP BY metric_name",
-            (cutoff, *args),
-        ).fetchall()
-    return {r["metric_name"]: r["n"] for r in rows}
-
-
 def events_in_window(
     metric_name: str | None = None,
     since_days: int = 30,

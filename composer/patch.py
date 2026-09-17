@@ -346,6 +346,3 @@ def diff_lines(before: dict, after: dict, context: int = 3) -> list[DiffLine]:
             out.append(DiffLine(kind="context", text=raw[1:] if raw.startswith(" ") else raw))
     return out
 
-
-def has_changes(before: dict, after: dict) -> bool:
-    return render_outline(before) != render_outline(after)

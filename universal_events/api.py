@@ -26,6 +26,40 @@ from .mapping import pipeline
 app = FastAPI(title="Composer proactive-agent demo", version="0.1.0")
 WEB_DIR = PACKAGE_ROOT / "web"
 
+_sweeper: Any = None
+
+
+@app.on_event("startup")
+def _start_sweeper() -> None:
+    """Run the recurring job for real, on a background thread.
+
+    Production would be daily; SWEEP_INTERVAL_SECONDS is 60 here so the
+    behaviour is observable. Proposals dedupe, so a quiet sweep costs nothing
+    and creates nothing -- but the run log fills up, which is what shows the
+    job is genuinely recurring rather than button-driven.
+    """
+    global _sweeper
+    if not settings.auto_sweep:
+        return
+    from composer.runners import Sweeper
+
+    _sweeper = Sweeper(interval_seconds=settings.sweep_interval_seconds)
+    _sweeper.start()
+
+
+@app.on_event("shutdown")
+def _stop_sweeper() -> None:
+    if _sweeper is not None:
+        _sweeper.stop()
+
+
+@app.get("/api/sweeper")
+def sweeper_state() -> dict[str, Any]:
+    if _sweeper is None:
+        return {"running": False, "interval": settings.sweep_interval_seconds}
+    return {"running": _sweeper.running, "interval": _sweeper.interval,
+            "next_in": _sweeper.seconds_until_next}
+
 
 def _c():
     from composer import (audience, feedback, flow_store, patch, proposals,
