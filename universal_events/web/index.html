@@ -157,10 +157,17 @@ const esc = s => String(s??'').replace(/[&<>"]/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const api = async (p,o) => (await fetch('/api'+p, o?{method:'POST',
   headers:{'Content-Type':'application/json'}, body:JSON.stringify(o)}:{})).json();
-const money = v => v==null ? '—' : '$'+Number(v).toFixed(6);
+const money = v => {
+  if(v==null) return '—';
+  const n = Number(v);
+  if(n === 0) return '$0.00';
+  if(n < 0.01) return '$'+n.toFixed(4).replace(/0+$/,'').replace(/\.$/,'.0');
+  return '$'+n.toFixed(2);
+};
 
 let S = { view:'proposals', proposals:[], sel:null, detail:null, rev:null,
-          corrections:[], runs:[], flows:[], sources:null, ingest:null, busy:null };
+          corrections:[], runs:[], flows:[], sources:null, ingest:null,
+          signals:[], busy:null };
 
 /* ---------------------------------------------------------------- status */
 async function status(){
@@ -207,7 +214,31 @@ function diffBlock(diff){
 function detailView(){
   const wrap = el('div');
   if(!S.detail){
-    wrap.appendChild(el('div','quiet','Select a proposal, or run a sweep.'));
+    const intro = el('div','panel');
+    intro.innerHTML = `<h3>What it is watching right now</h3>
+      <div class="quiet">These are computed by query, not by a model — the agent
+      cites these numbers rather than inventing them. Nothing has been proposed yet.</div>`;
+    wrap.appendChild(intro);
+    if(!S.signals.length){
+      wrap.appendChild(el('div','quiet','No signals. Try <b>Reset demo</b>.'));
+      return wrap;
+    }
+    S.signals.forEach(sig => {
+      const sev = sig.severity==='high' ? 'var(--del)'
+                : sig.severity==='medium' ? 'var(--warn)' : 'var(--dim)';
+      const box = el('div','panel');
+      box.style.borderLeft = `3px solid ${sev}`;
+      box.innerHTML = `<div class="meta" style="display:flex;gap:6px;margin-bottom:6px">
+          <span class="tag">${esc(sig.severity)}</span>
+          <span class="tag">${esc(sig.scope)} scope</span>
+          <span class="tag">${esc(sig.kind)}</span>
+        </div>
+        <div style="font-weight:500;margin-bottom:4px">${esc(sig.title)}</div>
+        <div class="quiet">${esc(sig.detail)}</div>`;
+      wrap.appendChild(box);
+    });
+    wrap.appendChild(el('div','quiet',
+      '<div style="margin-top:4px">Hit <b>Run sweep now</b> to see what it decides to do about these.</div>'));
     return wrap;
   }
   const p = S.detail;
@@ -441,9 +472,10 @@ function render(){
 }
 
 async function refresh(){
-  const [p,c,r,f] = await Promise.all([api('/proposals'),api('/corrections'),
-                                       api('/runs'),api('/flows')]);
-  S.proposals=p.proposals; S.corrections=c.corrections; S.runs=r.runs; S.flows=f.flows;
+  const [p,c,r,f,sg] = await Promise.all([api('/proposals'),api('/corrections'),
+                                          api('/runs'),api('/flows'),api('/signals')]);
+  S.proposals=p.proposals; S.corrections=c.corrections; S.runs=r.runs;
+  S.flows=f.flows; S.signals=sg.signals;
   await status();
 }
 
@@ -476,10 +508,13 @@ $('#reset').onclick = async () => {
 
 (async function init(){
   S.sources = await api('/sources');
-  $('#evt').innerHTML = S.sources.sources.flatMap(s =>
-    s.samples.map(x => `<option value="${s.key}|${x.key}">${esc(s.tool)} · ${esc(x.label)}</option>`)
-  ).join('');
-  $('#evt').value = 'fitness|class_no_show';
+  const opts = S.sources.sources.flatMap(s =>
+    s.samples.map(x => ({v:`${s.key}|${x.key}`, t:`${s.tool} · ${x.label}`})));
+  const KEY = 'fitness|class_no_show';
+  opts.sort((a,b) => (a.v===KEY?-1:b.v===KEY?1:0));
+  $('#evt').innerHTML = opts.map(o =>
+    `<option value="${o.v}">${esc(o.t)}</option>`).join('');
+  $('#evt').selectedIndex = 0;
   await refresh(); render();
 })();
 </script>
