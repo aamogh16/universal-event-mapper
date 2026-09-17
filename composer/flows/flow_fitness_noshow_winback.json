@@ -5,7 +5,10 @@
   "business": "Ironline Strength Co.",
   "status": "live",
   "version": 1,
-  "trigger": { "type": "metric", "metric": "Class No-Show" },
+  "trigger": {
+    "type": "metric",
+    "metric": "Class No-Show"
+  },
   "steps": [
     {
       "id": "s1",
@@ -44,5 +47,9 @@
       ],
       "false_branch": []
     }
+  ],
+  "handles_signals": [
+    "metric_trend",
+    "repeat_negative"
   ]
 }

@@ -5,7 +5,10 @@
   "business": "Harborlight Youth Coalition",
   "status": "live",
   "version": 1,
-  "trigger": { "type": "metric", "metric": "Donation Made" },
+  "trigger": {
+    "type": "metric",
+    "metric": "Donation Made"
+  },
   "steps": [
     {
       "id": "s1",
@@ -32,5 +35,8 @@
       "body": "Dear {{ first_name }}, we did not hear back. Would you consider a gift today?",
       "cta": "Donate"
     }
+  ],
+  "handles_signals": [
+    "lapsed_donor"
   ]
 }

@@ -5,7 +5,10 @@
   "business": "Beacon Hill Dental",
   "status": "live",
   "version": 1,
-  "trigger": { "type": "metric", "metric": "Appointment Completed" },
+  "trigger": {
+    "type": "metric",
+    "metric": "Appointment Completed"
+  },
   "steps": [
     {
       "id": "s1",
@@ -20,5 +23,6 @@
       "body": "Hi {{ first_name }}, thanks for shopping with us. Complete your purchase to earn rewards on your next order.",
       "cta": "Shop now"
     }
-  ]
+  ],
+  "handles_signals": []
 }

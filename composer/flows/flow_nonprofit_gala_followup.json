@@ -5,7 +5,10 @@
   "business": "Harborlight Youth Coalition",
   "status": "live",
   "version": 1,
-  "trigger": { "type": "metric", "metric": "Event RSVP" },
+  "trigger": {
+    "type": "metric",
+    "metric": "Event RSVP"
+  },
   "steps": [
     {
       "id": "s1",
@@ -30,5 +33,6 @@
       "true_branch": [],
       "false_branch": []
     }
-  ]
+  ],
+  "handles_signals": []
 }

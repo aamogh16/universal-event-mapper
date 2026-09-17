@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 from typing import Any
 
 from universal_events.config import PROJECT_ROOT
@@ -94,6 +95,48 @@ def pick_flow_for_signal(signal: Any) -> dict | None:
         if wants == "no-show" and any(w in name for w in ("no-show", "win-back")):
             return flow
     return by_vertical[0]
+
+
+def find_covering_flow(signal: Any) -> dict | None:
+    """The flow RESPONSIBLE for this signal, or None if nothing is.
+
+    Strict on purpose. "Same vertical" is not the same as "handles this".
+    A gym's no-show win-back does not cover a member who simply stopped
+    booking -- that member never no-showed, they just went quiet, and no
+    event fires for an absence. Returning None is the interesting answer:
+    it means the business has no automation for this at all, which is a
+    stronger thing to surface than a delay that is 48 hours too long.
+    """
+    for flow in all_flows():
+        if signal.kind in (flow.get("handles_signals") or []):
+            return flow
+    if signal.trigger_metric:
+        exact = flows_for(vertical=signal.vertical, trigger_metric=signal.trigger_metric)
+        if exact:
+            return exact[0]
+    return None
+
+
+def add_flow(flow: dict, *, proposal_id: str | None = None) -> dict:
+    """Persist a newly drafted flow as a draft, mirroring Klaviyo's own
+    behaviour: flows created via the API land in Draft, not live."""
+    state = _load_state()
+    created = dict(flow)
+    created.setdefault("id", f"flow_drafted_{uuid4().hex[:8]}")
+    created["version"] = 1
+    created["status"] = "draft"
+    state.setdefault("flows", {})[created["id"]] = created
+    state.setdefault("history", []).append(
+        {
+            "flow_id": created["id"],
+            "version": 1,
+            "note": f"created from proposal: {created.get('name')}",
+            "proposal_id": proposal_id,
+            "at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    _save_state(state)
+    return created
 
 
 def commit_version(
