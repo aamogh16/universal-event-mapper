@@ -1,0 +1,46 @@
+# Bloomerang -> Klaviyo. Nonprofit donations and event RSVPs.
+#
+# Bloomerang uses PascalCase keys and wraps contact values in {Value, Type}
+# objects, so the email path has to reach through to `.Value`.
+source: nonprofit_bloomerang
+display_name: Harborlight Youth Coalition
+tool: Bloomerang
+business_type: Nonprofit / donations
+
+identity:
+  email: [Constituent.PrimaryEmail.Value]
+  phone_number: [Constituent.PrimaryPhone.Value]
+  external_id: [Constituent.Id]
+  first_name: [Constituent.FirstName]
+  last_name: [Constituent.LastName]
+
+metric:
+  from: [RecordType]
+  map:
+    Donation: Donation Made
+    EventRegistration: Event RSVP
+    Pledge: Pledge Created
+  default: Constituent Activity
+
+timestamp:
+  from: [CreatedDate]
+
+value:
+  from: [Amount, AmountPaid]
+  currency_from: [CurrencyCode]
+  currency_default: USD
+
+unique_id:
+  from: [Id]
+
+properties:
+  Fund: Fund.Name
+  Campaign: Campaign.Name
+  Designation: Designation
+  Payment Method: Method
+  Recurring Donor: IsRecurring
+  Event Name: EventName
+  Event Date: EventDate
+  Attendee Count: AttendeeCount
+  Ticket Level: TicketLevel
+  Constituent Type: Constituent.Type

@@ -1,0 +1,45 @@
+# Calendly -> Klaviyo. Deterministic mapping for a booking business.
+#
+# Paths are dotted and support list indexes (a.b.0.c). Each field takes a LIST
+# of candidate paths, tried in order; the first one present wins. That is what
+# makes one config tolerate several event shapes from the same tool.
+source: dental_calendly
+display_name: Beacon Hill Dental
+tool: Calendly
+business_type: Dental practice / booking
+
+identity:
+  email: [payload.email]
+  phone_number: [payload.text_reminder_number]
+  first_name: [payload.first_name]
+  last_name: [payload.last_name]
+
+metric:
+  from: [event]
+  map:
+    invitee.created: Appointment Booked
+    invitee.completed: Appointment Completed
+    invitee_no_show.created: Appointment No-Show
+    invitee.canceled: Appointment Canceled
+  default: Appointment Activity
+
+timestamp:
+  from: [payload.scheduled_event.start_time, created_at]
+
+value:
+  from: [payload.payment.amount]
+  currency_from: [payload.payment.currency]
+  currency_default: USD
+
+unique_id:
+  from: [payload.uri]
+
+properties:
+  Appointment Type: payload.scheduled_event.name
+  Appointment Start: payload.scheduled_event.start_time
+  Provider: payload.scheduled_event.event_memberships.0.user_name
+  Location: payload.scheduled_event.location.location
+  Timezone: payload.timezone
+  Rescheduled: payload.rescheduled
+  First Visit: payload.questions_and_answers.0.answer
+  Insurance Provider: payload.questions_and_answers.1.answer

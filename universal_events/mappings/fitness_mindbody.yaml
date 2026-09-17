@@ -1,0 +1,59 @@
+# Mindbody -> Klaviyo. Fitness studio memberships and class bookings.
+#
+# Note the `when` clauses on the metric: Mindbody reuses ONE event type
+# (classRosterBookingStatus.updated) for booked / cancelled / no-show and
+# distinguishes them by a nested status field. Rules are evaluated in order and
+# the first match wins, so a flat key->name map is not enough here.
+source: fitness_mindbody
+display_name: Ironline Strength Co.
+tool: Mindbody
+business_type: Fitness studio / membership
+
+identity:
+  email: [eventData.email]
+  phone_number: [eventData.mobilePhone]
+  external_id: [eventData.clientId]
+  first_name: [eventData.firstName]
+  last_name: [eventData.lastName]
+
+metric:
+  from: [eventType]
+  rules:
+    - when:
+        path: eventData.bookingStatus
+        equals: Booked
+      name: Class Booked
+    - when:
+        path: eventData.lateCancelled
+        equals: true
+      name: Class No-Show
+    - when:
+        path: eventData.bookingStatus
+        equals: LateCancelled
+      name: Class No-Show
+  map:
+    clientMembershipAssignment.created: Membership Renewed
+    client.created: Member Created
+  default: Studio Activity
+
+timestamp:
+  from: [eventData.classStartDateTime, eventData.activeDate, eventInstanceOriginationDateTime]
+
+value:
+  from: [eventData.paymentAmount]
+  currency_from: [eventData.currencyCode]
+  currency_default: USD
+
+unique_id:
+  from: [eventId]
+
+properties:
+  Class Name: eventData.className
+  Class Start: eventData.classStartDateTime
+  Coach: eventData.staffName
+  Booking Status: eventData.bookingStatus
+  Membership Name: eventData.membershipName
+  Membership Expires: eventData.expirationDate
+  Auto Renewing: eventData.autoRenewing
+  Location ID: eventData.locationId
+  Member Status: eventData.status

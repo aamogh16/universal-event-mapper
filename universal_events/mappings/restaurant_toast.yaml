@@ -1,0 +1,47 @@
+# Toast Tables -> Klaviyo. Restaurant reservations.
+#
+# Toast identifies everything by GUID and nests the human under `guest`, with
+# `emailAddress` rather than `email` -- a good example of why a per-source
+# config beats guessing when the shape is known.
+source: restaurant_toast
+display_name: Camber & Rye
+tool: Toast Tables
+business_type: Restaurant / reservations
+
+identity:
+  email: [guest.emailAddress]
+  phone_number: [guest.phoneNumber]
+  external_id: [guest.guestGuid]
+  first_name: [guest.firstName]
+  last_name: [guest.lastName]
+
+metric:
+  from: [state]
+  map:
+    BOOKED: Reservation Made
+    COMPLETED: Reservation Completed
+    NO_SHOW: Reservation No-Show
+    CANCELLED: Reservation Canceled
+  default: Reservation Activity
+
+timestamp:
+  from: [reservation.expectedArrival, modifiedDate]
+
+value:
+  from: [check.totalAmount]
+  currency_from: [check.currency]
+  currency_default: USD
+
+unique_id:
+  from: [guid]
+
+properties:
+  Restaurant: restaurantName
+  Party Size: reservation.partySize
+  Expected Arrival: reservation.expectedArrival
+  Seating Area: reservation.seatingArea
+  Special Requests: reservation.specialRequests
+  Booking Source: reservation.source
+  Loyalty Enrolled: guest.loyaltyEnrolled
+  Lifetime Visits: guest.visitCount
+  Tip Amount: check.tipAmount
