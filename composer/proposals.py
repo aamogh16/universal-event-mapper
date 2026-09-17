@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 from universal_events.config import PROJECT_ROOT
 
-from . import auditor, context, feedback, flow_store
+from . import audience, auditor, context, feedback, flow_store
 from .auditor import AuditOutput
 from .patch import DiffLine, EditOp, apply_patch, diff_lines, render_diff
 
@@ -40,6 +40,7 @@ class Revision(BaseModel):
     predicted_impact: str = ""
     ops: list[EditOp] = Field(default_factory=list)
     drafted_flow: dict[str, Any] | None = None
+    drafted_campaign: dict[str, Any] | None = None
     diff_text: str = ""
     diff: list[DiffLine] = Field(default_factory=list)
     confidence: float = 0.0
@@ -89,6 +90,8 @@ class Proposal(BaseModel):
     resolved_at: str | None = None
     applied_version: int | None = None
     rejection_feedback: list[str] = Field(default_factory=list)
+    # Set when a campaign proposal is approved.
+    sent_to: int | None = None
 
     @property
     def current(self) -> Revision:
@@ -157,7 +160,12 @@ EMPTY_FLOW: dict[str, Any] = {"name": "(no automation exists)", "version": 0,
 def _revision_from_audit(
     n: int, audit: AuditOutput, before: dict | None, prompted_by: str = ""
 ) -> Revision:
-    if audit.drafted_flow is not None:
+    if audit.drafted_campaign is not None:
+        # A campaign has no flow to diff. Its "before/after" is the message
+        # preview plus the resolved audience.
+        before = EMPTY_FLOW
+        after = EMPTY_FLOW
+    elif audit.drafted_flow is not None:
         # A created flow diffs against nothing, so every line reads as an
         # addition -- which is exactly what "I drafted this for you" looks like.
         before = EMPTY_FLOW
@@ -176,6 +184,7 @@ def _revision_from_audit(
         predicted_impact=audit.predicted_impact,
         ops=audit.ops,
         drafted_flow=audit.drafted_flow,
+        drafted_campaign=audit.drafted_campaign,
         diff_text=render_diff(before, after),
         diff=diff_lines(before, after),
         confidence=audit.confidence,
@@ -190,8 +199,16 @@ def _revision_from_audit(
     )
 
 
-def create_from_signal(signal: Any, *, origin: str | None = None) -> Proposal | None:
-    """Audit the flow for a signal and open a proposal. None if nothing to say."""
+def create_from_signal(
+    signal: Any, *, origin: str | None = None, want_campaign: bool = False
+) -> Proposal | None:
+    """Open a proposal for a signal. None if there is nothing worth saying.
+
+    Three shapes, chosen by what the account actually needs:
+      want_campaign     -> a one-off send clearing the existing backlog
+      a covering flow   -> patch it
+      no covering flow  -> draft a new one
+    """
     # Strict coverage: is any flow actually RESPONSIBLE for this signal?
     # None is the interesting answer -- it means draft something new rather
     # than bend an unrelated flow to cover it.
@@ -201,7 +218,15 @@ def create_from_signal(signal: Any, *, origin: str | None = None) -> Proposal | 
     # One open proposal per flow. Several signals can point at the same flow
     # (two lapsed donors, one donor-lapse flow), and stacking near-identical
     # proposals is noise the reviewer has to dismiss.
-    if flow is not None:
+    if want_campaign:
+        for existing in _load():
+            if (
+                existing.kind == "campaign"
+                and existing.signal_kind == signal.kind
+                and existing.status in ("pending", "revised")
+            ):
+                return None
+    elif flow is not None:
         for existing in _load():
             if existing.flow_id == flow["id"] and existing.status in ("pending", "revised"):
                 return None
@@ -215,8 +240,13 @@ def create_from_signal(signal: Any, *, origin: str | None = None) -> Proposal | 
                 return None
 
     bundle = context.build(signal, flow, sibling_flows=siblings)
-    audit = auditor.propose(bundle) if flow else auditor.propose_new_flow(bundle)
-    if not audit.ops and not audit.drafted_flow:
+    if want_campaign:
+        audit = auditor.propose_campaign(bundle, audience.resolve(signal))
+    elif flow:
+        audit = auditor.propose(bundle)
+    else:
+        audit = auditor.propose_new_flow(bundle)
+    if not (audit.ops or audit.drafted_flow or audit.drafted_campaign):
         return None
 
     proposal = Proposal(
@@ -251,6 +281,16 @@ def approve(proposal_id: str) -> tuple[Proposal | None, dict | None]:
     proposal = get(proposal_id)
     if proposal is None or proposal.status in ("approved",):
         return proposal, None
+
+    if proposal.kind == "campaign":
+        campaign = proposal.current.drafted_campaign
+        if not campaign:
+            return proposal, None
+        proposal.status = "approved"
+        proposal.resolved_at = _now()
+        proposal.sent_to = int(campaign.get("audience_size") or 0)
+        _upsert(proposal)
+        return proposal, campaign
 
     if proposal.kind == "create":
         drafted = proposal.current.drafted_flow
