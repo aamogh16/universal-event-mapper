@@ -14,6 +14,7 @@ Verified against the live docs (September 2026):
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -155,30 +156,45 @@ class KlaviyoClient:
 
     # ----------------------------------------------------------------- read
 
-    def find_profile(self, *, email: str | None = None, phone: str | None = None) -> dict | None:
+    def find_profile(
+        self,
+        *,
+        email: str | None = None,
+        phone: str | None = None,
+        attempts: int = 1,
+        delay: float = 0.8,
+    ) -> dict | None:
         """Look up a profile so the demo can deep-link straight to it.
 
         Returns None on any failure -- this is a convenience, never a blocker.
+
+        `attempts` > 1 retries with a short delay. Create Event returns 202
+        (queued, not stored), so a brand-new profile is briefly unfindable; on
+        a fresh account the first send for a person needs a beat before the
+        lookup succeeds.
         """
         if self.dry_run or not (email or phone):
             return None
-        if email:
-            flt = f"equals(email,'{email}')"
-        else:
-            flt = f"equals(phone_number,'{phone}')"
-        try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.get(
-                    f"{self.base_url}/api/profiles",
-                    headers=self._headers(),
-                    params={"filter": flt},
-                )
-            if response.status_code != 200:
+        flt = (
+            f"equals(email,'{email}')" if email else f"equals(phone_number,'{phone}')"
+        )
+        for attempt in range(max(1, attempts)):
+            try:
+                with httpx.Client(timeout=self.timeout) as client:
+                    response = client.get(
+                        f"{self.base_url}/api/profiles",
+                        headers=self._headers(),
+                        params={"filter": flt},
+                    )
+                if response.status_code == 200:
+                    data = response.json().get("data") or []
+                    if data:
+                        return data[0]
+            except (httpx.HTTPError, ValueError, KeyError, IndexError):
                 return None
-            data = response.json().get("data") or []
-            return data[0] if data else None
-        except (httpx.HTTPError, ValueError, KeyError, IndexError):
-            return None
+            if attempt < attempts - 1:
+                time.sleep(delay)
+        return None
 
     def profile_events(self, profile_id: str, limit: int = 50) -> list[dict]:
         """Recent events for a profile, newest first. Empty list on failure."""
