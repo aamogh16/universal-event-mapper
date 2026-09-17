@@ -1,0 +1,48 @@
+{
+  "id": "flow_fitness_noshow_winback",
+  "name": "Class No-Show Win-Back",
+  "vertical": "fitness",
+  "business": "Ironline Strength Co.",
+  "status": "live",
+  "version": 1,
+  "trigger": { "type": "metric", "metric": "Class No-Show" },
+  "steps": [
+    {
+      "id": "s1",
+      "type": "delay",
+      "hours": 72,
+      "note": "Give them a few days before reaching out"
+    },
+    {
+      "id": "s2",
+      "type": "email",
+      "subject": "We missed you at class",
+      "body": "Hi {{ first_name }}, we noticed you couldn't make your last class. Life happens! Your spot is always here when you're ready to come back.",
+      "cta": "Browse the schedule"
+    },
+    {
+      "id": "s3",
+      "type": "delay",
+      "hours": 168
+    },
+    {
+      "id": "s4",
+      "type": "split",
+      "condition": {
+        "field": "has_booked_since",
+        "op": "equals",
+        "value": false
+      },
+      "true_branch": [
+        {
+          "id": "s5",
+          "type": "email",
+          "subject": "Still want to get back in?",
+          "body": "Hi {{ first_name }}, your membership is still active. Want us to save you a spot this week?",
+          "cta": "Book a class"
+        }
+      ],
+      "false_branch": []
+    }
+  ]
+}

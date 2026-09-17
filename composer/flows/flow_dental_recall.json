@@ -1,0 +1,24 @@
+{
+  "id": "flow_dental_recall",
+  "name": "6-Month Cleaning Recall",
+  "vertical": "dental",
+  "business": "Beacon Hill Dental",
+  "status": "live",
+  "version": 1,
+  "trigger": { "type": "metric", "metric": "Appointment Completed" },
+  "steps": [
+    {
+      "id": "s1",
+      "type": "delay",
+      "hours": 4320,
+      "note": "180 days until the next recommended cleaning"
+    },
+    {
+      "id": "s2",
+      "type": "email",
+      "subject": "Thanks for your recent order!",
+      "body": "Hi {{ first_name }}, thanks for shopping with us. Complete your purchase to earn rewards on your next order.",
+      "cta": "Shop now"
+    }
+  ]
+}

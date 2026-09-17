@@ -1,0 +1,36 @@
+{
+  "id": "flow_nonprofit_donor_lapse",
+  "name": "Lapsed Donor Re-Engagement",
+  "vertical": "nonprofit",
+  "business": "Harborlight Youth Coalition",
+  "status": "live",
+  "version": 1,
+  "trigger": { "type": "metric", "metric": "Donation Made" },
+  "steps": [
+    {
+      "id": "s1",
+      "type": "delay",
+      "hours": 2880,
+      "note": "Wait 120 days after a gift before re-engaging"
+    },
+    {
+      "id": "s2",
+      "type": "email",
+      "subject": "Your support changes lives",
+      "body": "Dear {{ first_name }}, thank you for your past generosity. Our work continues and we would be grateful for your renewed support.",
+      "cta": "Give again"
+    },
+    {
+      "id": "s3",
+      "type": "delay",
+      "hours": 720
+    },
+    {
+      "id": "s4",
+      "type": "email",
+      "subject": "One more ask",
+      "body": "Dear {{ first_name }}, we did not hear back. Would you consider a gift today?",
+      "cta": "Donate"
+    }
+  ]
+}
