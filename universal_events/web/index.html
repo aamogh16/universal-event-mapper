@@ -184,6 +184,20 @@
   .vs .line b{color:var(--tx)}
   .warnbox{background:rgba(210,153,34,.1);border:1px solid #5c4a1a;border-radius:8px;
     padding:11px 14px;margin-top:12px;font-size:12.5px;line-height:1.55}
+
+  .strat{display:flex;align-items:center;gap:9px;padding:10px 13px;border-radius:8px;
+    margin-bottom:12px;font-size:12.5px;border:1px solid var(--line)}
+  .strat.llm{background:rgba(188,140,255,.1);border-color:#4c3575}
+  .strat.heuristic{background:rgba(88,166,255,.08);border-color:#1f4e79}
+  .strat.config{background:rgba(63,185,80,.08);border-color:#1f5c2e}
+  .strat .who{font-weight:600}
+  .strat.llm .who{color:var(--create)}
+  .strat.heuristic .who{color:var(--patch)}
+  .strat.config .who{color:var(--campaign)}
+  .strat .why{color:var(--dim);margin-left:auto;text-align:right;font-size:11.5px}
+  .chain{font-size:11.5px;color:var(--dim2);margin-top:9px}
+  .chain code{background:var(--panel2);padding:1px 6px;border-radius:4px;
+    border:1px solid var(--line)}
 </style>
 </head>
 <body>
@@ -474,14 +488,32 @@ function viewIngest(){
     g.appendChild(el('div','panel',`<h3>What the tool sent</h3>
       <pre class="diff" style="max-height:420px">${esc(JSON.stringify(S.ingest.payload,null,2))}</pre>`));
     const mp = S.ingest.mapping;
+    const label = {
+      llm: ['Inferred by a model',
+            'no config existed, so a model read the payload'],
+      heuristic: ['Deterministic structural inference',
+                  'no model call — offline, and it cannot fail on network'],
+      config: ['Config-driven', 'a YAML mapping already existed for this tool'],
+    }[mp.strategy] || [mp.strategy, ''];
+    const detail = mp.strategy === 'llm'
+      ? `${esc(mp.model_used||'')} · ${mp.tokens_used||0} tokens · ${mp.latency_ms||0}ms`
+      : mp.strategy === 'config' ? esc(mp.detected_config||'') : '$0.00 · 0ms';
+
     g.appendChild(el('div','panel',`<h3>What it worked out</h3>
+      <div class="strat ${esc(mp.strategy)}">
+        <span>${mp.strategy==='llm'?'⚡':mp.strategy==='config'?'📄':'⚙'}</span>
+        <span class="who">${esc(label[0])}</span>
+        <span class="why">${detail}<br>${esc(label[1])}</span>
+      </div>
       <dl class="kv">
         <dt>metric</dt><dd><b>${esc(mp.metric_name)}</b></dd>
         <dt>profile</dt><dd>${esc(mp.identity.email||mp.identity.phone_number||'—')}</dd>
         <dt>name</dt><dd>${esc([mp.identity.first_name,mp.identity.last_name].filter(Boolean).join(' ')||'—')}</dd>
         <dt>value</dt><dd>${mp.value?esc(mp.value+' '+(mp.value_currency||'')):'—'}</dd>
-        <dt>strategy</dt><dd>${esc(mp.strategy)} · ${Math.round(mp.confidence*100)}% confident</dd>
+        <dt>confidence</dt><dd>${Math.round(mp.confidence*100)}%</dd>
       </dl>
+      <div class="chain">tried in order: ${(mp.chain||[]).map(x=>`<code>${esc(x)}</code>`).join(' → ')}</div>
+      ${mp.reasoning?`<div class="quiet" style="margin-top:9px;font-size:12px">${esc(mp.reasoning)}</div>`:''}
       <div class="sect" style="margin-top:13px">field by field</div>
       <table><tbody>${mp.traces.slice(0,10).map(t=>
         `<tr><td class="mono quiet">${esc(t.source_path)}</td>

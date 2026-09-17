@@ -146,6 +146,9 @@ def map_payload(req: MapReq) -> dict[str, Any]:
             "value": m.value, "value_currency": m.value_currency,
             "traces": [t.model_dump() for t in m.field_traces],
             "warnings": m.warnings,
+            "model_used": m.model_used,
+            "tokens_used": m.tokens_used,
+            "latency_ms": m.latency_ms,
         },
         "klaviyo": None if not d else {
             "ok": d.ok, "summary": d.summary, "status_code": d.status_code,
