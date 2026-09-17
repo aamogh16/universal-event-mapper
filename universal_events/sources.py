@@ -3,10 +3,33 @@
 Each payload is shaped like what the business's *real* tool would send --
 Calendly's nested `payload`, Mindbody's `eventData` envelope, Toast's GUIDs,
 Bloomerang's flat snake_case. None of them look like Klaviyo events, which is
-the entire point: the mapper has to do real work.
+the point: the mapper has to do real work.
 
-`UNKNOWN_PAYLOADS` are the live-demo money shot -- verticals with no config
-file at all, handed to the inference engine cold.
+FACT CHECK, because it is easy to get this wrong and it matters:
+
+Klaviyo ALREADY has native, hand-built connectors for Mindbody, Toast, and
+Bloomerang Fundraising. Mindbody is part of a named product line ("Klaviyo for
+Wellness", alongside Zenoti and Boulevard). Toast syncs order events and three
+years of history and is enabled from Toast's own integrations page.
+
+So do NOT claim Klaviyo cannot read data from a gym, restaurant, or nonprofit.
+It can, for these tools, today. Anyone on the Composer team knows this.
+
+The real constraint is narrower and still real: each of those connectors is a
+bespoke build that Klaviyo's own team maintains. A business whose tool has no
+connector has no path unless it employs engineers. Growth into new verticals is
+gated by engineering time per integration, and the long tail of niche tools
+will never justify a dedicated build.
+
+That makes the two groups below play different roles:
+
+  SOURCES            tools that DO have official connectors. Here they
+                     demonstrate parity -- the same result from a YAML file
+                     instead of a Klaviyo engineering project.
+
+  UNKNOWN_PAYLOADS   tools with no connector and no realistic prospect of
+                     one. These are the actual proof, and the reason to lead
+                     the demo with them rather than with Mindbody.
 """
 
 from __future__ import annotations
@@ -57,6 +80,13 @@ class Source:
     samples: list[EventSample] = field(default_factory=list)
     # None means "no config exists" -> forces the inference path.
     config_name: str | None = None
+    # Whether Klaviyo ships an official connector for this tool.
+    #   "native"     -> verified to exist; this source shows PARITY, not novelty
+    #   "none"       -> verified not to exist; this source shows NEW capability
+    #   "unverified" -> not checked; do not make claims either way
+    # Recorded here so the demo narrative cannot drift back into asserting
+    # that Klaviyo cannot reach these businesses.
+    klaviyo_connector: str = "unverified"
 
     def sample(self, key: str) -> EventSample:
         for item in self.samples:
@@ -131,6 +161,7 @@ DENTAL_SOURCE = Source(
     key="dental",
     display_name="Beacon Hill Dental",
     tool="Calendly",
+    klaviyo_connector="unverified",
     business_type="Dental practice / booking",
     personas=DENTAL_PERSONAS,
     config_name="dental_calendly",
@@ -198,6 +229,7 @@ FITNESS_SOURCE = Source(
     key="fitness",
     display_name="Ironline Strength Co.",
     tool="Mindbody",
+    klaviyo_connector="native",
     business_type="Fitness studio / membership",
     personas=FITNESS_PERSONAS,
     config_name="fitness_mindbody",
@@ -302,6 +334,7 @@ RESTAURANT_SOURCE = Source(
     key="restaurant",
     display_name="Camber & Rye",
     tool="Toast Tables",
+    klaviyo_connector="native",
     business_type="Restaurant / reservations",
     personas=RESTAURANT_PERSONAS,
     config_name="restaurant_toast",
@@ -370,6 +403,7 @@ NONPROFIT_SOURCE = Source(
     key="nonprofit",
     display_name="Harborlight Youth Coalition",
     tool="Bloomerang",
+    klaviyo_connector="native",
     business_type="Nonprofit / donations",
     personas=NONPROFIT_PERSONAS,
     config_name="nonprofit_bloomerang",
@@ -418,7 +452,10 @@ SOURCES: dict[str, Source] = {
 
 
 # --------------------------------------------------------------------------
-# Unknown payloads -- no config, no prior knowledge. The generalization proof.
+# Unknown payloads -- no config, no prior knowledge, and no Klaviyo connector
+# in existence. This is the generalization proof and the demo's headline: a
+# veterinary clinic, a tutoring company, and a PT practice are exactly the
+# long tail that will never get a bespoke integration built for them.
 # --------------------------------------------------------------------------
 
 UNKNOWN_PAYLOADS: dict[str, dict[str, Any]] = {

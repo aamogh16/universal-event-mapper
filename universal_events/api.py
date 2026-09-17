@@ -20,7 +20,11 @@ from .sources import SOURCES, UNKNOWN_PAYLOADS
 
 app = FastAPI(
     title="Universal Event Mapper",
-    description="Get any non-ecommerce business's events into Klaviyo in minutes.",
+    description=(
+        "Absorb events from a tool nobody has built an integration for. "
+        "Klaviyo has hundreds of hand-built connectors; this is a generic path "
+        "that needs no per-tool engineering."
+    ),
     version="0.1.0",
 )
 
