@@ -404,12 +404,35 @@ def propose(bundle: ContextBundle) -> AuditOutput:
         return _from_rules(bundle, reason=f"{type(exc).__name__}: {exc}"[:200])
 
 
+def _no_model_revision(
+    bundle: ContextBundle, previous_ops: list[EditOp], reason: str
+) -> AuditOutput:
+    """Revision is not possible without a model, so say that plainly.
+
+    There was a keyword-matching version here that scanned feedback for words
+    like "sms". It could not actually read what the user wrote, and pretending
+    to understand feedback is worse than admitting the model is unreachable.
+    """
+    return AuditOutput(
+        headline="Can't revise right now — the model is unreachable",
+        observation=f"{bundle.signal.title}. {bundle.signal.detail}",
+        audit_summary=(
+            "Your feedback was recorded but cannot be acted on without a model. "
+            "The original proposal is unchanged."
+        ),
+        ops=previous_ops,
+        confidence=0.0,
+        source="rules",
+        fallback_reason=reason,
+    )
+
+
 def revise(
     bundle: ContextBundle, previous_ops: list[EditOp], user_feedback: str
 ) -> AuditOutput:
     """Revise a rejected proposal using the user's feedback."""
     if not _usable():
-        return _revise_with_rules(bundle, previous_ops, user_feedback)
+        return _no_model_revision(bundle, previous_ops, "no OpenAI key configured")
 
     prior = "\n".join(f"- {op.describe()} ({op.rationale})" for op in previous_ops)
     prompt = (
@@ -432,75 +455,9 @@ def revise(
         audit, meta = _ask(SYSTEM_PROMPT, prompt, LLMAudit)
         return _finalise(audit, bundle, meta)
     except Exception as exc:
-        return _revise_with_rules(
-            bundle, previous_ops, user_feedback, reason=f"{type(exc).__name__}: {exc}"[:200]
+        return _no_model_revision(
+            bundle, previous_ops, f"{type(exc).__name__}: {exc}"[:200]
         )
-
-
-# Offline revision: enough to keep the reject/revise beat working with no
-# network. Handles the negations that actually come up in this demo.
-NEGATION_PATTERNS = {
-    "sms": ("sms", "text message", "texting"),
-    "too_soon": ("too soon", "within 30", "30 days", "wait longer", "too fast", "too quick"),
-}
-
-
-def _revise_with_rules(
-    bundle: ContextBundle,
-    previous_ops: list[EditOp],
-    user_feedback: str,
-    reason: str | None = None,
-) -> AuditOutput:
-    lowered = user_feedback.lower()
-    kept: list[EditOp] = []
-    removed: list[str] = []
-    learned: list[str] = []
-
-    blocks_sms = any(token in lowered for token in NEGATION_PATTERNS["sms"]) and any(
-        neg in lowered for neg in ("no ", "don't", "dont", "not ", "never", "avoid")
-    )
-    wants_slower = any(token in lowered for token in NEGATION_PATTERNS["too_soon"])
-
-    for op in previous_ops:
-        is_sms = (op.step or {}).get("type") == "sms" or (
-            op.op == "fill_branch"
-            and any((s or {}).get("type") == "sms" for s in (op.value or []))
-        )
-        if blocks_sms and is_sms:
-            removed.append(op.describe())
-            continue
-        kept.append(op)
-
-    if blocks_sms:
-        learned.append("Never propose SMS steps for this audience")
-    if wants_slower:
-        learned.append("Do not ask for another gift within 30 days of the last one")
-        for op in kept:
-            if op.op == "set_field" and op.field == "hours":
-                op.value = max(float(op.value or 0), 24 * 30)
-
-    return AuditOutput(
-        headline="Revised: " + (", ".join(learned) if learned else "adjusted per your feedback"),
-        observation=f"{bundle.signal.title}. {bundle.signal.detail}",
-        audit_summary=(
-            f'You said: "{user_feedback}". '
-            + (
-                f"Removed {len(removed)} step(s) that conflicted: {', '.join(removed)}. "
-                if removed
-                else ""
-            )
-            + f"Kept the {len(kept)} change(s) you did not object to."
-        ),
-        findings=[f"Dropped: {r}" for r in removed],
-        predicted_impact="The fix now respects the constraint you gave.",
-        ops=kept,
-        confidence=0.65,
-        source="rules",
-        learned_rule=learned[0] if learned else None,
-        learned_rule_is_global=False,
-        learned_rules=learned,
-        fallback_reason=reason,
-    )
 
 
 # ---------------------------------------------------------------- create path
