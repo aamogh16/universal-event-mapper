@@ -5,3 +5,6 @@ __pycache__/
 *.db
 .DS_Store
 .pytest_cache/
+flow_state.json
+proposals.json
+corrections.json
