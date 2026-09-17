@@ -220,6 +220,17 @@ def validate_flow(flow: dict) -> list[str]:
             problems.append(f"{sid}: delay needs numeric `hours`")
         elif kind in ("email", "sms") and not str(step.get("body") or "").strip():
             problems.append(f"{sid}: {kind} has no body")
+        elif kind == "split":
+            cond = step.get("condition")
+            if not isinstance(cond, dict):
+                problems.append(
+                    f"{sid}: split condition must be an object with field/op/value, "
+                    f"got {type(cond).__name__}"
+                )
+            elif not cond.get("field"):
+                problems.append(f"{sid}: split condition has no field")
+            if not (step.get("true_branch") or step.get("false_branch")):
+                problems.append(f"{sid}: split has no steps on either branch")
     return problems
 
 
@@ -277,11 +288,16 @@ def render_outline(flow: dict) -> list[str]:
                 if step.get("send_if"):
                     lines.append(f"{pad}      only if: {step['send_if']}")
             elif kind == "split":
-                cond = step.get("condition") or {}
-                lines.append(
-                    f"{pad}[{sid}] split if {cond.get('field')} "
-                    f"{cond.get('op')} {cond.get('value')!r}"
-                )
+                cond = step.get("condition")
+                if isinstance(cond, dict):
+                    label = (
+                        f"{cond.get('field')} {cond.get('op')} {cond.get('value')!r}"
+                    )
+                elif cond:
+                    label = str(cond)
+                else:
+                    label = "(no condition)"
+                lines.append(f"{pad}[{sid}] split if {label}")
                 lines.append(f"{pad}  yes:")
                 emit(step.get("true_branch") or [], indent + 2)
                 lines.append(f"{pad}  no:")

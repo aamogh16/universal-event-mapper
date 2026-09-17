@@ -241,7 +241,14 @@ a JSON object string, e.g. {"type":"sms","body":"...","send_if":"sms_consent == 
 - set_trigger: change the triggering metric via value_text.
 
 Valid step types: delay, email, sms, split, update_profile.
-An email step needs subject and body. An sms step needs body."""
+Exact shapes:
+  {"type":"delay","hours":24}
+  {"type":"email","subject":"...","body":"..."}
+  {"type":"sms","body":"...","send_if":"sms_consent == true"}
+  {"type":"split","condition":{"field":"has_booked_since","op":"equals",
+   "value":false},"true_branch":[...],"false_branch":[...]}
+A split's condition MUST be an object with field, op and value -- never a
+string like "has_booked == false" -- and at least one branch must have steps."""
 
 
 def _client() -> Any:
@@ -513,7 +520,15 @@ def _detemplate(steps: list[dict], bundle: ContextBundle) -> list[str]:
     if not names:
         return fixed
 
-    for step in steps:
+    def all_steps(items: list[dict]):
+        for step in items:
+            yield step
+            for branch in ("true_branch", "false_branch"):
+                nested = step.get(branch)
+                if isinstance(nested, list):
+                    yield from all_steps(nested)
+
+    for step in all_steps(steps):
         for field in COPY_FIELDS:
             text = step.get(field)
             if not isinstance(text, str):
@@ -535,18 +550,29 @@ def _draft_to_flow(draft: DraftedFlow, bundle: ContextBundle) -> dict:
     if not isinstance(steps, list) or not steps:
         raise RuntimeError("drafted flow had no steps")
 
-    clean: list[dict[str, Any]] = []
-    for index, raw in enumerate(steps, start=1):
-        if not isinstance(raw, dict):
-            continue
-        step = dict(raw)
-        step["id"] = f"s{index}"
-        # Consent gate is non-negotiable on SMS.
-        if step.get("type") == "sms":
-            step.setdefault("send_if", "sms_consent == true")
-        clean.append(step)
+    # Assign ids recursively: split branches contain steps too, and the
+    # validator walks into them, so numbering only the top level leaves
+    # nested steps without ids and fails the whole draft.
+    counter = iter(range(1, 1000))
 
-    detemplated = _draft_to_flow_fixes = _detemplate(clean, bundle)
+    def normalise(raw_steps: list[Any]) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        for raw in raw_steps:
+            if not isinstance(raw, dict):
+                continue
+            step = dict(raw)
+            step["id"] = f"s{next(counter)}"
+            if step.get("type") == "sms":
+                step.setdefault("send_if", "sms_consent == true")
+            if step.get("type") == "split":
+                for branch in ("true_branch", "false_branch"):
+                    if isinstance(step.get(branch), list):
+                        step[branch] = normalise(step[branch])
+            out.append(step)
+        return out
+
+    clean = normalise(steps)
+    detemplated = _detemplate(clean, bundle)
 
     return {
         "name": draft.name,
@@ -792,7 +818,7 @@ def propose_campaign(bundle: ContextBundle, aud: Any) -> AuditOutput:
             "_forced": forced,
         }
         return AuditOutput(
-            headline=f"Drafted a {channel} to {aud.size} people — send it?",
+            headline=f"Drafted {'an email' if channel == 'email' else 'an SMS'} to {aud.size} people — send it?",
             observation=draft.observation,
             audit_summary=draft.rationale,
             findings=[
