@@ -87,6 +87,13 @@ happened: "Appointment Confirmed", "Session Attended". Not a field name, not \
 the tool's internal event code.
 - Pick properties a marketer would segment on: service type, staff, location, \
 plan, amounts. Skip internal ids, GUIDs, URLs, schema versions and tokens.
+- external_id_path must be YOUR SYSTEM'S ID FOR THE PERSON -- a customer id, \
+client id, member id, patient id. It is NOT the id of the thing that happened. \
+A session_uuid, booking_ref, appointment_id, order_id, encounter_id or \
+transaction id identifies an EVENT, not a human: those change every time the \
+same person does something, so using one as a profile identifier is wrong. \
+If the payload has no stable per-person id, leave external_id_path null -- an \
+email alone is a perfectly good identifier.
 - If no path identifies a person, leave all identifier paths null. Do not \
 invent one.
 - If the payload has separate first/last name fields, use first_name_path and \
