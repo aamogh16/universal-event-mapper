@@ -1,5 +1,32 @@
 # Positioning — read this before demoing
 
+## The frame for the video
+
+Lead with the conversation, not with a claimed gap.
+
+> "I talked to Elias. He described wanting Composer to move from reactive to
+> proactive — business notifications rather than push notifications — and an
+> agent that learns from its mistakes. So I built that."
+
+That is the pitch. It does not depend on anything being missing from the
+product, which matters because Composer has shipped features that overlap
+with parts of this ("Discover missing flows", "Audit my segments" are both
+suggestion chips on the Klaviyo home screen today).
+
+**Overlap is validation, not a problem.** Building toward the same place the
+team is already heading is a good sign, not a redundancy. Do not claim novelty
+you cannot defend; claim that you listened and then shipped something working
+against their real API. For a co-op, execution speed and listening are the
+things being evaluated, and both are demonstrable here.
+
+If someone says "Composer already does some of this", the honest answer is:
+"Good — then I was building in the right direction. The part I found most
+interesting was the bit Elias mentioned that I haven't seen anywhere: being
+told no and not needing to be told twice."
+
+---
+
+
 ## The claim to never make
 
 > "Klaviyo can't read data from a gym, restaurant, or nonprofit."
