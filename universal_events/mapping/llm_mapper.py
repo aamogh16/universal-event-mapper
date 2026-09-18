@@ -306,7 +306,9 @@ def map_with_llm(payload: dict[str, Any], *, model: str | None = None) -> Mappin
     )
 
 
-def to_yaml_config(inferred: InferredMapping, source_name: str) -> str:
+def to_yaml_config(
+    inferred: InferredMapping, source_name: str, tool_name: str | None = None
+) -> str:
     """Serialise an inferred mapping into a mappings/*.yaml config.
 
     This is what turns a one-off inference into a permanent, deterministic,
@@ -314,9 +316,9 @@ def to_yaml_config(inferred: InferredMapping, source_name: str) -> str:
     per-event cost.
     """
     lines = [
-        f"# Inferred automatically for {source_name}. Review before trusting.",
+        f"# Inferred from one sample payload. Review before trusting.",
         f"source: {source_name}",
-        f"tool: {source_name}",
+        f"tool: {tool_name or source_name}",
         "",
         "identity:",
     ]

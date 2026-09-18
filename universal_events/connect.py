@@ -51,7 +51,9 @@ class ConnectResult:
         return "$0.00 — config-driven, no model call"
 
 
-def _mapping_to_config(sample: dict[str, Any], result: Any) -> str:
+def _mapping_to_config(
+    sample: dict[str, Any], result: Any, tool_name: str | None = None
+) -> str:
     """Rebuild a config from a completed mapping's field traces.
 
     The traces record which source path fed which destination, so the config
@@ -78,7 +80,7 @@ def _mapping_to_config(sample: dict[str, Any], result: Any) -> str:
         confidence=result.confidence,
         reasoning=result.reasoning,
     )
-    return to_yaml_config(inferred, "kisi_door_access")
+    return to_yaml_config(inferred, "kisi_door_access", tool_name)
 
 
 def connect_tool(
@@ -112,7 +114,7 @@ def connect_tool(
     # --- 2. persist it as a config ---------------------------------------
     if save_config:
         try:
-            yaml_text = _mapping_to_config(sample, mapping)
+            yaml_text = _mapping_to_config(sample, mapping, tool)
             name = "kisi_door_access"
             (MAPPINGS_DIR / f"{name}.yaml").write_text(yaml_text, encoding="utf-8")
             load_config.cache_clear()
