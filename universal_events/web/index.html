@@ -485,9 +485,8 @@ function detailView(){
 }
 
 /* ---------------------------------------------------------------- views */
-function viewProposals(){
-  const m = $('#main'); m.innerHTML=''; m.style.gridTemplateColumns='340px 1fr';
-  const left = el('div','col left');
+function fillInbox(left){
+  left.innerHTML = '';
   left.appendChild(el('p','sect',`Inbox · ${S.proposals.length}`));
   if(!S.proposals.length) left.appendChild(el('div','quiet',
     'Nothing yet. Hit <b>Run sweep now</b>, or fire an event.'));
@@ -499,6 +498,19 @@ function viewProposals(){
       `<div style="font-size:12.5px">${esc(c.rule)}</div>
        <div class="quiet" style="font-size:11px">${esc(c.vertical||'all verticals')} · used ${c.times_applied}×</div>`)));
   }
+}
+
+function refreshInbox(){
+  // Only the left column. The detail pane is left alone so a half-typed
+  // rejection survives a background poll.
+  const left = document.querySelector('.col.left');
+  if(left) fillInbox(left);
+}
+
+function viewProposals(){
+  const m = $('#main'); m.innerHTML=''; m.style.gridTemplateColumns='340px 1fr';
+  const left = el('div','col left');
+  fillInbox(left);
   const right = el('div','col'); right.id='detail';
   right.appendChild(detailView());
   m.appendChild(left); m.appendChild(right);
@@ -905,17 +917,41 @@ function notify(p){
   renderQuiet();
 }
 
+function dropStaleToasts(){
+  // A toast whose proposal no longer exists, or is no longer open, is lying to
+  // the user. Happens after a reset, or when something supersedes it.
+  const live = new Set(
+    S.proposals.filter(p => p.status === 'pending' || p.status === 'revised')
+               .map(p => p.id));
+  [...$('#toasts').querySelectorAll('.toast')].forEach(t => {
+    const id = t.dataset.id;
+    // Resolved toasts keep their id but are mid-fade; leave those alone.
+    if(id && !live.has(id) && !t.classList.contains('done')) t.remove();
+  });
+  if(!S.proposals.length){ quietCount = 0; renderQuiet(); }
+}
+
 async function poll(){
   try{
     const d = await api('/proposals');
+    const vanished = S.sel && !d.proposals.some(p => p.id === S.sel);
     S.proposals = d.proposals;
-    // Only genuinely new, still-open proposals interrupt.
-    // A superseded proposal has been replaced; it should never interrupt.
+
+    // Only genuinely new, still-open proposals interrupt. A superseded one
+    // has been replaced, so it must never interrupt.
     d.proposals.filter(p => p.status === 'pending' && !seen.has(p.id))
                .reverse().forEach(notify);
-    // Mark superseded ones as seen so they can never toast later.
     d.proposals.filter(p => p.status === 'superseded').forEach(p => seen.add(p.id));
-    if(S.view === 'proposals' && !S.sel) render();
+    dropStaleToasts();
+
+    if(vanished){
+      // The open proposal was deleted underneath us -- a reset, most likely.
+      S.sel = null; S.detail = null; seen.clear();
+      if(S.view === 'proposals') render();
+    } else if(S.view === 'proposals'){
+      // Left column only, so a half-typed rejection survives the poll.
+      refreshInbox();
+    }
     await status();
   }catch(e){ /* polling must never break the page */ }
 }
