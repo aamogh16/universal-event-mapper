@@ -60,8 +60,15 @@ def doctor() -> None:
     _, _, flow_store, _, proposals, _, _ = _c()
     console.print(f"  flows      {len(flow_store.all_flows())}")
     console.print(f"  proposals  {proposals.summary()}")
-    console.print(f"  sweep      every {settings.sweep_interval_seconds}s "
-                  f"(production would be 86400)")
+    if settings.auto_sweep:
+        console.print(f"  sweep      [yellow]background job ON[/] — every "
+                      f"{settings.sweep_interval_seconds}s "
+                      f"(production would be 86400)")
+        console.print("             [dim]it will create proposals on its own; set "
+                      "AUTO_SWEEP=false for a controlled run[/]")
+    else:
+        console.print(f"  sweep      background job [dim]off[/] — "
+                      f"`sweep` / Run sweep now only")
 
 
 @app.command()
