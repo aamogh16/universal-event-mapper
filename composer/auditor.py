@@ -245,6 +245,14 @@ Rules you must follow:
 - Only reference step ids that exist in the flow shown to you.
 - Propose the smallest set of edits that genuinely fixes the problem. Two or \
 three good edits beat eight speculative ones.
+- EVERY finding you list must have an edit that fixes it. If you cannot fix \
+something with the operations available, do not list it as a finding -- \
+diagnosing a problem and then leaving it untouched is worse than staying \
+quiet about it. You have insert_after and fill_branch, so "this needs a \
+different treatment for repeat cases" IS fixable: add the steps.
+- Do not over-correct. If the problem is that a flow waits too long, shorten \
+the wait -- do not delete every delay so two emails land within hours of each \
+other. Ask what a careful marketer would actually set.
 - OBEY the operating constraints the user has already given you. They are not \
 suggestions. If a constraint forbids something, do not propose it, and do not \
 argue about it.
