@@ -45,20 +45,30 @@ it is already watching, which is the right first frame.
 
 ---
 
-## 1:00 – 1:30 · An event from a tool nobody integrated
+## 1:00 – 1:45 · The same gym's other tools
 
-**Tab: Event ingest → click `veterinary`.**
+**Tab: Event ingest.**
 
-- Left: the raw payload from a vet clinic's booking system
+**Say first:** "Ironline runs on Mindbody, which Klaviyo integrates well. But
+like any real gym it runs on three other things too."
+
+**Click `Kisi`** (the door-access system).
+
+- Left: the raw payload. `"type": "lock.unlock"`, a unix timestamp, the member
+  buried under `actor.reference`
 - Right: **⚡ Inferred by a model** — no config existed
-- The field trace: `patient.owner.contact_email → profile.email`
-- `202 Accepted`, and a link into the real profile
+- Metric: **`Gym Check-In`** — *not* "Lock Unlocked"
 
-**Say:** "No integration exists for this tool and never will. It worked out
-that the marketable person is the pet's *owner*, not the pet — and that's a
-real profile in Klaviyo now."
+**Say:** "That payload says `lock.unlock`. It worked out that a door opening
+means the member checked in, and it landed on Kwame's existing profile —
+someone already in this account from Mindbody. That's a whole category of
+visit Mindbody never sees, because he came in without booking a class."
 
-Then move on. This is the supporting act.
+**Click `Trainerize`.** Point at the value: **$960**, and the warning beneath
+it — the payload said `price_paid_cents: 96000`, and it caught that.
+
+**Say:** "Three tools, one gym, no connectors. Every one of those is a separate
+engineering project at Klaviyo today."
 
 ---
 

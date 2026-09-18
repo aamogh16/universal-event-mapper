@@ -68,9 +68,15 @@ Three strategies, tried cheapest-first. The UI shows which one ran.
 | **heuristic** | model unavailable — structural inference | free, offline |
 
 ```bash
-./demo map veterinary        # a vet clinic's booking system -> real Klaviyo
-./demo map tutoring          # picks the guardian, not the student
-./demo map physical_therapy  # pulls the patient out of a FHIR telecom array
+# The same gym's other tools -- none have a Klaviyo connector
+./demo map door_access        # "lock.unlock" -> Gym Check-In, on an existing member
+./demo map personal_training  # catches price_paid_cents and converts it
+./demo map body_scan          # machine output from the InBody scanner
+
+# Other industries, for breadth
+./demo map tutoring           # picks the guardian, not the student
+./demo map veterinary         # picks the pet's owner, not the pet
+./demo map physical_therapy   # pulls the patient out of a FHIR telecom array
 ```
 
 ### 2. Notice things, and propose fixes

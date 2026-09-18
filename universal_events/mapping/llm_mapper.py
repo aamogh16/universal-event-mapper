@@ -82,9 +82,13 @@ numeric indexes for lists: "subject.telecom.0.value".
 both a dependent and a responsible adult -- a student and a guardian, a pet and \
 an owner -- choose the ADULT / account holder, because that is who receives \
 email and who pays.
-- metric_name is a short human event name in Title Case, describing what \
-happened: "Appointment Confirmed", "Session Attended". Not a field name, not \
-the tool's internal event code.
+- metric_name is a short human event name in Title Case describing what the \
+CUSTOMER DID, in words the business would use. Not a field name and NOT the \
+tool's internal event code. A door system reporting "lock.unlock" means the \
+member CHECKED IN -- call it "Gym Check-In", not "Lock Unlocked". A scanner \
+reporting "BODY_COMPOSITION" means they had a body scan. Translate machine \
+vocabulary into what a marketer would recognise, and include the subject when \
+it disambiguates: "PT Session Completed" beats "Appointment Completed".
 - Pick properties a marketer would segment on: service type, staff, location, \
 plan, amounts. Skip internal ids, GUIDs, URLs, schema versions and tokens.
 - external_id_path must be YOUR SYSTEM'S ID FOR THE PERSON -- a customer id, \
@@ -122,6 +126,19 @@ def build_prompt(payload: dict[str, Any]) -> str:
         f"## Every path in this payload\n{listing}\n\n"
         "## Your task\nMap this onto a Klaviyo event. Return paths only."
     )
+
+
+# Field names that mean the number is in hundredths. The model returns paths,
+# not values, so it cannot divide -- and a payload saying `price_paid_cents:
+# 96000` would otherwise be reported as a $96,000 personal-training package.
+MINOR_UNIT_HINTS = ("cents", "cent", "pence", "minor_units", "_minor", "subunit")
+
+
+def _is_minor_units(path: str | None) -> bool:
+    if not path:
+        return False
+    tail = path.rsplit(".", 1)[-1].lower()
+    return any(hint in tail for hint in MINOR_UNIT_HINTS)
 
 
 def _resolve(payload: dict[str, Any], path: str | None) -> tuple[Any, str | None]:
@@ -235,6 +252,12 @@ def map_with_llm(payload: dict[str, Any], *, model: str | None = None) -> Mappin
         if numeric is None:
             warnings.append(f"Non-numeric value at {value_path!r}; omitted.")
         else:
+            if _is_minor_units(value_path):
+                numeric = numeric / 100
+                warnings.append(
+                    f"{value_path} is in minor units; divided by 100 to get "
+                    f"{numeric:.2f}."
+                )
             cur, cur_path = _resolve(payload, inferred.currency_path)
             currency = str(cur).upper() if cur is not MISSING else "USD"
             if cur is MISSING:

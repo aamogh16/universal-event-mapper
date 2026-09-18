@@ -149,8 +149,9 @@ def list_sources() -> dict[str, Any]:
             for s in sources.list_sources()
         ],
         "unknown": [
-            {"key": k, "description": v["_description"], "payload": v["payload"]}
-            for k, v in sources.UNKNOWN_PAYLOADS.items()
+            {"key": k, "description": v["_description"], "payload": v["payload"],
+             "tool": v.get("_tool"), "business": v.get("_business")}
+            for k, v in sources.all_unintegrated().items()
         ],
     }
 
@@ -158,7 +159,7 @@ def list_sources() -> dict[str, Any]:
 @app.post("/api/map")
 def map_payload(req: MapReq) -> dict[str, Any]:
     if req.key:
-        spec = sources.UNKNOWN_PAYLOADS.get(req.key)
+        spec = sources.all_unintegrated().get(req.key)
         if not spec:
             raise HTTPException(404, f"no payload {req.key!r}")
         payload = spec["payload"]

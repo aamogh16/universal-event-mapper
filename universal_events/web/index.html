@@ -491,20 +491,38 @@ function viewProposals(){
 function viewIngest(){
   const m = $('#main'); m.innerHTML=''; m.style.gridTemplateColumns='1fr';
   const c = el('div','col single');
-  c.appendChild(el('p','sect','Events from tools nobody has integrated'));
+  c.appendChild(el('p','sect','Tools with no Klaviyo connector'));
   c.appendChild(el('div','quiet',
-    'Klaviyo has hand-built connectors for Mindbody, Toast and Bloomerang. '
-    +'These three have none, and never will — no config exists for them here.'));
-  const row = el('div','actions');
-  (S.sources?.unknown||[]).forEach(u => {
-    const b = el('button',null,u.key.replace(/_/g,' '));
+    'Ironline runs on <b>Mindbody</b>, which Klaviyo integrates. Like any real '
+    + 'gym it also runs on three other tools — and none of those have a '
+    + 'connector, or will. No config exists for any of them here.'));
+
+  const mk = (u) => {
+    const b = el('button', null,
+      (u.tool ? esc(u.tool) : u.key.replace(/_/g,' ')));
     b.onclick = async () => {
-      b.disabled=true; b.innerHTML='<span class="spin"></span> mapping…';
-      S.ingest = await api('/map',{key:u.key,send:true}); render();
+      b.disabled = true; b.innerHTML = '<span class="spin"></span> mapping…';
+      S.ingest = await api('/map', {key: u.key, send: true}); render();
     };
-    row.appendChild(b);
-  });
-  c.appendChild(row);
+    return b;
+  };
+
+  const all = S.sources?.unknown || [];
+  const gym = all.filter(u => u.business === 'Ironline Strength Co.');
+  const other = all.filter(u => u.business !== 'Ironline Strength Co.');
+
+  const r1 = el('div','actions');
+  gym.forEach(u => r1.appendChild(mk(u)));
+  c.appendChild(r1);
+
+  if(other.length){
+    c.appendChild(el('div','quiet',
+      '<div style="margin-top:14px">And the same machinery on other industries '
+      + '— breadth, not the point:</div>'));
+    const r2 = el('div','actions');
+    other.forEach(u => r2.appendChild(mk(u)));
+    c.appendChild(r2);
+  }
 
   if(S.ingest){
     const g = el('div'); g.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px';

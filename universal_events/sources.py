@@ -464,10 +464,107 @@ SOURCES: dict[str, Source] = {
 
 
 # --------------------------------------------------------------------------
-# Unknown payloads -- no config, no prior knowledge, and no Klaviyo connector
-# in existence. This is the generalization proof and the demo's headline: a
-# veterinary clinic, a tutoring company, and a PT practice are exactly the
-# long tail that will never get a bespoke integration built for them.
+# Unintegrated tools, SAME BUSINESS.
+#
+# This is the sharper version of the long-tail argument. Ironline Strength Co.
+# runs on Mindbody, which Klaviyo integrates. But like any real gym it also
+# uses three other tools -- a PT platform, a body-composition scanner, a door
+# access system -- and none of those have a connector, or will.
+#
+# So the point is not "Klaviyo cannot reach gyms". It is: even for a business
+# Klaviyo already integrates, the second, third and fourth tools it runs on are
+# invisible. Every one of those is a separate engineering project today.
+#
+# Critically these carry REAL member emails from the seeded history, so the
+# events land on profiles that already exist and enrich them, rather than
+# introducing a stranger from an unrelated industry.
+# --------------------------------------------------------------------------
+
+GYM_TOOLS: dict[str, dict[str, Any]] = {
+    "personal_training": {
+        "_tool": "Trainerize",
+        "_description": "The gym's personal-training platform. Identifies people "
+        "by an internal athlete id, nests the human two levels down, and calls "
+        "the session an 'appointment' rather than a class.",
+        "payload": {
+            "webhook_version": "2",
+            "event": "appointment.completed",
+            "studio": {"code": "IRONLINE", "region": "us-east"},
+            "appointment": {
+                "id": 883021,
+                "type": "1:1 Personal Training",
+                "starts_at": "2026-09-16T07:00:00-04:00",
+                "duration_min": 60,
+                "coach": {"id": 41, "display": "Coach Ray"},
+                "status": "completed",
+                "notes": "Deadlift progression, added 10lb",
+            },
+            "athlete": {
+                "athlete_id": "ATH-7781",
+                "contact": {
+                    "primary_email": "h.tanaka@gmail.com",
+                    "mobile": "+16175550288",
+                },
+                "given_name": "Haruki",
+                "family_name": "Tanaka",
+            },
+            "package": {
+                "name": "12-Session PT Block",
+                "sessions_remaining": 2,
+                "expires_on": "2026-10-04",
+                "price_paid_cents": 96000,
+                "currency_code": "USD",
+            },
+        },
+    },
+    "body_scan": {
+        "_tool": "InBody 970",
+        "_description": "The body-composition scanner in the gym. Machine output: "
+        "flat keys, metric abbreviations, and the member identified only by the "
+        "email they typed into the kiosk.",
+        "payload": {
+            "device_sn": "IB970-44821",
+            "test_datetime": "2026-09-15T18:42:11",
+            "test_type": "BODY_COMPOSITION",
+            "member_email_entered": "priya.n@gmail.com",
+            "member_name_entered": "Priya Nair",
+            "results": {
+                "weight_kg": 64.2,
+                "skeletal_muscle_mass_kg": 27.8,
+                "body_fat_percent": 24.1,
+                "pbf_change_since_last": -1.4,
+                "smm_change_since_last": 0.9,
+                "inbody_score": 78,
+                "visceral_fat_level": 4,
+            },
+            "previous_test_datetime": "2026-08-04T19:10:02",
+        },
+    },
+    "door_access": {
+        "_tool": "Kisi",
+        "_description": "The door-access system. A check-in is a visit that "
+        "involved no class booking at all -- data Mindbody never sees.",
+        "payload": {
+            "type": "lock.unlock",
+            "occurred": 1789012800,
+            "place": {"id": 5521, "name": "Ironline Strength Co."},
+            "door": {"id": 9, "name": "Main Entrance"},
+            "actor": {
+                "kind": "member",
+                "reference": "k.osei@gmail.com",
+                "full_name": "Kwame Osei",
+                "groups": ["Unlimited Monthly", "24h Access"],
+            },
+            "method": "mobile_credential",
+        },
+    },
+}
+
+
+# --------------------------------------------------------------------------
+# Other verticals -- breadth, not the headline. Kept because they prove the
+# same machinery works outside fitness, but a single-business demo should lead
+# with GYM_TOOLS above.
 # --------------------------------------------------------------------------
 
 UNKNOWN_PAYLOADS: dict[str, dict[str, Any]] = {
@@ -547,6 +644,16 @@ UNKNOWN_PAYLOADS: dict[str, dict[str, Any]] = {
         },
     },
 }
+
+
+def all_unintegrated() -> dict[str, dict[str, Any]]:
+    """Gym tools first, then the other verticals."""
+    merged: dict[str, dict[str, Any]] = {}
+    for key, spec in GYM_TOOLS.items():
+        merged[key] = {**spec, "_business": "Ironline Strength Co."}
+    for key, spec in UNKNOWN_PAYLOADS.items():
+        merged[key] = {**spec, "_business": "another vertical"}
+    return merged
 
 
 def list_sources() -> list[Source]:
