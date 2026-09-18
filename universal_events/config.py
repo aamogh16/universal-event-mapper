@@ -52,7 +52,6 @@ class Settings(BaseSettings):
     sweep_interval_seconds: int = 60
     # Run the recurring job on a background thread when the server starts.
     auto_sweep: bool = True
-    rehearse_mode: bool = False
 
     event_db_path: Path = PROJECT_ROOT / "events.db"
 
@@ -72,8 +71,6 @@ class Settings(BaseSettings):
         provider is usable we fall back to the deterministic rules auditor so
         the demo still produces a proposal.
         """
-        if self.rehearse_mode:
-            return "rehearse"
         if self.llm_provider == "openai" and self.openai_configured:
             return "openai"
         if self.llm_provider == "gemini" and self.gemini_configured:

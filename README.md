@@ -40,7 +40,7 @@ See [`PITCH.md`](PITCH.md) for the full positioning and the claims to avoid.
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env          # add KLAVIYO_PRIVATE_API_KEY and OPENAI_API_KEY
 ./demo reset                  # seed 300+ backdated events, flows to v1
-./demo sync-profiles          # optional: create those members in Klaviyo first
+./demo sync-profiles          # create those members as Klaviyo profiles
 ./serve                       # dashboard at http://localhost:8000
 ```
 
@@ -174,31 +174,44 @@ reference them — this makes the demo match that.
 ## Layout
 
 ```
-universal_events/        the input layer
-  sources.py             mock payloads from 4 tools + 3 unintegrated verticals
-  mapping/               config, llm and heuristic strategies + the pipeline
-  klaviyo.py             Events API client
-  store.py  seed.py      local event mirror and deterministic demo history
-  api.py  cli.py  web/   dashboard and CLI
+universal_events/          the input layer
+  sources.py               mock payloads: 4 configured tools, 3 of the gym's
+                           unintegrated tools, 3 other verticals
+  mapping/
+    pipeline.py            strategy selection: config -> llm -> heuristic
+    config_mapper.py       deterministic, YAML-driven
+    llm_mapper.py          infers a mapping; returns PATHS, never values
+    heuristic.py           offline structural inference, no model
+    base.py  paths.py      shared types and dotted-path resolution
+  connect.py               infer a tool's mapping once, save it as a config
+  klaviyo.py               Events API client + real campaign creation
+  store.py  seed.py        local event mirror and deterministic demo history
+  config.py                settings, and the pinned Klaviyo API revision
+  api.py  cli.py  web/     dashboard and CLI
 
-composer/                the agent
-  signals.py             what changed, computed by query
-  audience.py            who it affects, counted not guessed
-  context.py             what the agent knows before it reasons
-  auditor.py             audit, draft, revise — every model call
-  patch.py               edit ops, validation, diffing
-  proposals.py           approve / reject / revise lifecycle
-  feedback.py            learned corrections
-  runners.py             trigger and recurring patterns
-  chat.py                the reactive path, for contrast
-  flows/                 mock automations
+composer/                  the agent
+  signals.py               what changed, computed by query
+  audience.py              who it affects, counted not guessed
+  context.py               what the agent knows before it reasons
+  auditor.py               audit, draft, revise — every model call
+  patch.py                 the three edit ops, validation, diffing
+  proposals.py             approve / reject / revise lifecycle
+  feedback.py              learned corrections
+  flow_store.py            flow versions and signal-to-flow matching
+  rules.py                 deterministic auditor, the offline fallback
+  runners.py               trigger and recurring patterns
+  chat.py                  the reactive path, for contrast
+  flows/                   mock automations (6 for the gym, 3 elsewhere)
 ```
 
 ## Configuration
 
 Everything lives in `.env` — see `.env.example`. Notable knobs:
 
+- `DEMO_VERTICAL` — which business the demo is about (`fitness`); `""` for all
 - `SWEEP_INTERVAL_SECONDS` — 60 for demos, 86400 in production
 - `AUTO_SWEEP` — run the recurring job on a thread at startup
 - `LLM_PROVIDER` — `openai`, `gemini`, or `rules` to force the offline path
+- `CREATE_REAL_CAMPAIGNS` — approving a campaign creates a Klaviyo Draft
+- `CAMPAIGN_FROM_EMAIL` / `CAMPAIGN_FROM_LABEL` — sender on created campaigns
 - `KLAVIYO_DRY_RUN` — build requests without sending them
