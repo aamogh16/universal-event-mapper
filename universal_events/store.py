@@ -137,7 +137,13 @@ def record_event(
     source_key: str | None = None,
     path: Path | None = None,
 ) -> int:
-    """Persist one mapped event. Accepts a MappingResult."""
+    """Persist one mapped event, skipping exact duplicates.
+
+    Klaviyo deduplicates on (profile, metric, unique_id), so replaying the
+    same payload twice is a no-op there. The local mirror now matches that:
+    without it, re-running an ingest (clicking "connect" twice, say) silently
+    doubled the history and every count derived from it.
+    """
     identity = mapping.identity
     occurred = mapping.occurred_at or _now()
     if occurred.tzinfo is None:
@@ -145,6 +151,13 @@ def record_event(
 
     init_db(path)
     with _connect(path) as conn:
+        existing = conn.execute(
+            "SELECT id FROM events WHERE profile_key = ? AND metric_name = ? "
+            "AND occurred_at = ? LIMIT 1",
+            (identity.primary, mapping.metric_name, occurred.isoformat()),
+        ).fetchone()
+        if existing is not None:
+            return int(existing["id"])
         cursor = conn.execute(
             """
             INSERT INTO events (profile_key, email, first_name, last_name,

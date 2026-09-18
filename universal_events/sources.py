@@ -653,9 +653,16 @@ UNKNOWN_PAYLOADS: dict[str, dict[str, Any]] = {
 DOOR_REGULAR = Persona("c.mbeki@outlook.com", "Chidi", "Mbeki", "+16175550781")
 
 
-def door_checkin(persona: Persona, days_ago: float) -> dict[str, Any]:
-    """One Kisi door-unlock event, backdated."""
-    when = _now() - timedelta(days=days_ago)
+def door_checkin(persona: Persona, days_ago: float, hour: int = 22) -> dict[str, Any]:
+    """One Kisi door-unlock event, backdated to a fixed time of day.
+
+    Anchored to midnight rather than "now minus N days" so repeated calls
+    produce byte-identical timestamps. Without that, re-running an ingest
+    generates near-but-not-quite-duplicate events that slip past
+    deduplication and silently double the history.
+    """
+    midnight = _now().replace(hour=0, minute=0, second=0, microsecond=0)
+    when = midnight - timedelta(days=days_ago) + timedelta(hours=hour)
     return {
         "type": "lock.unlock",
         "occurred": int(when.timestamp()),
@@ -680,7 +687,13 @@ def door_checkin_history(
     day, which reads as someone training consistently.
     """
     who = persona or DOOR_REGULAR
-    return [door_checkin(who, days_ago=round(1.5 * i + 1, 1)) for i in range(count)]
+    # Alternating evening/morning visits, whole days back, so the series is
+    # both realistic and reproducible. Hours are UTC and chosen to read as
+    # 6pm / 8am in US Eastern, which is where this gym is.
+    return [
+        door_checkin(who, days_ago=int(1.5 * i) + 1, hour=22 if i % 2 == 0 else 12)
+        for i in range(count)
+    ]
 
 
 def all_unintegrated() -> dict[str, dict[str, Any]]:
