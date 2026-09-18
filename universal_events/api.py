@@ -384,8 +384,12 @@ def connect_tool_endpoint() -> dict[str, Any]:
     # raw payload it read, and the events that actually landed on the profile.
     landed: list[dict[str, Any]] = []
     profile_before: dict[str, Any] = {}
-    if res.profile:
-        events = store.events_for_profile(res.profile, limit=30)
+    # The profile to show evidence for is whoever the REPLAYED HISTORY belongs
+    # to, not whoever the one inference sample happened to name -- those are
+    # different members, and looking up the wrong one silently found nothing.
+    target = (history[0].get("actor") or {}).get("reference") if history else None
+    if target:
+        events = store.events_for_profile(target, limit=30)
         landed = [
             {"date": str(e.occurred_at.date()), "age_days": e.age_days,
              "metric": e.metric_name, "door": e.properties.get("Door")}
@@ -413,7 +417,7 @@ def connect_tool_endpoint() -> dict[str, Any]:
         "audience_before": before["size"],
         "audience_after": after["size"],
         "removed": removed,
-        "profile": res.profile,
+        "profile": target,
         "sample_payload": history[0],
         "landed": landed,
         "profile_before": profile_before,
