@@ -119,20 +119,28 @@ def list_sources() -> None:
         table.add_row(src.key, src.tool, note,
                       ", ".join(s.key for s in src.samples))
     console.print(table)
-    console.print("\n[bold]unknown payloads[/] (no connector exists, none coming):")
-    for key, spec in sources.UNKNOWN_PAYLOADS.items():
-        console.print(f"  [green]{key}[/] — {spec['_description'].splitlines()[0]}")
+    console.print("\n[bold]tools with no Klaviyo connector[/]")
+    for key, spec in sources.all_unintegrated().items():
+        tool = spec.get("_tool") or "—"
+        biz = spec.get("_business", "")
+        console.print(f"  [green]{key:18}[/] {tool:14} [dim]{biz}[/]")
+        console.print(f"  {'':18} [dim]{spec['_description'].splitlines()[0]}[/]")
 
 
 @app.command("map")
 def map_unknown(
-    key: str = typer.Argument(..., help="veterinary | tutoring | physical_therapy"),
+    key: str = typer.Argument(
+        ...,
+        help="door_access | personal_training | body_scan | tutoring | "
+        "veterinary | physical_therapy",
+    ),
     send: bool = typer.Option(True, help="actually POST to Klaviyo"),
 ) -> None:
     """Map a payload from a tool nobody has integrated. The Part 1 proof."""
-    spec = sources.UNKNOWN_PAYLOADS.get(key)
+    available = sources.all_unintegrated()
+    spec = available.get(key)
     if not spec:
-        console.print(f"[red]unknown[/] — try: {', '.join(sources.UNKNOWN_PAYLOADS)}")
+        console.print(f"[red]unknown[/] — try: {', '.join(available)}")
         raise typer.Exit(1)
 
     console.print(Rule(f"raw payload — {key}"))
