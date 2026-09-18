@@ -238,10 +238,12 @@ def validate_flow(flow: dict) -> list[str]:
             hours = step.get("hours")
             if not isinstance(hours, (int, float)) or isinstance(hours, bool):
                 problems.append(f"{sid}: delay needs numeric `hours`")
-            elif hours < 1:
-                # A zero delay means "send instantly", which is never what a
-                # win-back wants and reads as a mistake to the recipient.
-                problems.append(f"{sid}: delay of {hours}h is too short (minimum 1)")
+            elif hours < 0:
+                problems.append(f"{sid}: delay cannot be negative ({hours})")
+            # Zero is valid: Klaviyo flows can send the moment they trigger,
+            # and for a no-show win-back that is a defensible choice. An
+            # earlier version rejected it as "too short", which was my opinion
+            # rather than a real constraint -- and it threw away good patches.
         elif kind in ("email", "sms") and not str(step.get("body") or "").strip():
             problems.append(f"{sid}: {kind} has no body")
         elif kind == "split":
@@ -262,6 +264,8 @@ def validate_flow(flow: dict) -> list[str]:
 
 
 def _fmt_delay(hours: float) -> str:
+    if hours <= 0:
+        return "no delay (sends immediately)"
     if hours >= 48 and hours % 24 == 0:
         return f"{int(hours // 24)} days"
     if hours >= 24 and hours % 24 == 0:
