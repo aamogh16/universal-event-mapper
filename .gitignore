@@ -9,3 +9,9 @@ flow_state.json
 proposals.json
 corrections.json
 runs.json
+
+# Mappings written by `connect-tool` at demo time. The four hand-written
+# configs in universal_events/mappings/ ARE tracked; anything inferred and
+# saved by the app is not -- `demo reset` deletes it so the next run shows
+# the model inferring it again.
+universal_events/mappings/kisi_door_access.yaml
