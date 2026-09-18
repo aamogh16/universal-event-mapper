@@ -69,6 +69,7 @@ def doctor() -> None:
     else:
         console.print(f"  sweep      background job [dim]off[/] — "
                       f"`sweep` / Run sweep now only")
+    console.print(f"  business   {settings.demo_vertical or 'all verticals'}")
 
 
 @app.command()
@@ -269,7 +270,7 @@ def send(
 def show_signals() -> None:
     """What the agent notices in the data. Deterministic — no model involved."""
     *_, signals = _c()
-    for s in signals.detect_aggregate():
+    for s in signals.detect_aggregate(settings.demo_vertical or None):
         console.print(f"\n[{SEV.get(s.severity,'white')}]● {s.severity.upper()}[/] "
                       f"[bold]{s.title}[/]")
         console.print(f"  {s.detail}")
@@ -445,7 +446,12 @@ def corrections() -> None:
 def flows() -> None:
     """Current automations and their versions."""
     _, _, flow_store, patch, *_ = _c()
+    scope = settings.demo_vertical or None
+    if scope:
+        console.print(f"[dim]showing {scope} only — DEMO_VERTICAL=\"\" for all[/]\n")
     for f in flow_store.all_flows():
+        if scope and f.get("vertical") != scope:
+            continue
         console.print(f"\n[bold]{f['name']}[/] "
                       f"[dim]v{f['version']} {f['status']} · {f.get('vertical')}[/]")
         for line in patch.render_outline(f)[1:]:
