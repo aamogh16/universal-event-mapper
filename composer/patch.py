@@ -21,26 +21,19 @@ from typing import Any, Iterator, Literal
 
 from pydantic import BaseModel, Field
 
+# Three operations, deliberately. Two others existed -- remove_step and
+# set_trigger -- and across measured runs the model never chose either, while
+# both produced the only bad patches seen: set_trigger invited a condition
+# smuggled into a metric name, and remove_step deleted every delay so two
+# emails landed hours apart. Removing a capability beats policing it.
 OpName = Literal[
     "set_field",      # change a scalar on a step (delay hours, subject, body)
     "insert_after",   # add a new step after an existing one
-    "remove_step",    # delete a step
     "fill_branch",    # put steps into a split's empty branch
-    "set_trigger",    # change what starts the flow
 ]
 
 STEP_TYPES = {"delay", "email", "sms", "split", "update_profile"}
 
-# A trigger is a metric NAME. The schema has no field for a trigger filter, so
-# a model wanting to say "the 3rd no-show in 30 days" has nowhere to put the
-# condition and writes it into the name instead -- producing
-# "Class No-Show where count >= 3 in 30 days", which no metric is called and
-# nothing could execute. A prompt rule got this down to roughly 1 in 5; this
-# catches the rest.
-CONDITION_TOKENS = (
-    " where ", ">=", "<=", " count", " within ", " in the last ", "&&", "||",
-    " and ", " or ", " over ", "==",
-)
 
 
 class EditOp(BaseModel):
@@ -60,13 +53,9 @@ class EditOp(BaseModel):
         if self.op == "insert_after":
             kind = (self.step or {}).get("type", "step")
             return f"insert {kind} after {self.step_id}"
-        if self.op == "remove_step":
-            return f"remove {self.step_id}"
         if self.op == "fill_branch":
             n = len(self.value or [])
             return f"{self.step_id}: fill {self.branch} branch with {n} step(s)"
-        if self.op == "set_trigger":
-            return f"trigger -> {self.value!r}"
         return self.op
 
 
@@ -182,14 +171,6 @@ def apply_patch(flow: dict, ops: list[EditOp]) -> PatchResult:
                 # and cannot be handed an id that already exists.
                 assign_ids(draft, [new_step])
 
-            elif op.op == "remove_step":
-                located = _find_container(draft.get("steps") or [], op.step_id or "")
-                if located is None:
-                    errors.append(PatchError(op_index=index, message=f"no step {op.step_id!r}"))
-                    continue
-                container, position = located
-                container.pop(position)
-
             elif op.op == "fill_branch":
                 step = find_step(draft, op.step_id or "")
                 if step is None or step.get("type") != "split":
@@ -207,28 +188,6 @@ def apply_patch(flow: dict, ops: list[EditOp]) -> PatchResult:
                     new_steps.append(entry)
                 step[key] = new_steps
                 assign_ids(draft, new_steps)
-
-            elif op.op == "set_trigger":
-                value = str(op.value or "")
-                lowered = f" {value.lower()} "
-                if not value.strip():
-                    errors.append(
-                        PatchError(op_index=index, message="empty trigger metric")
-                    )
-                    continue
-                smuggled = [t for t in CONDITION_TOKENS if t in lowered]
-                if smuggled:
-                    errors.append(
-                        PatchError(
-                            op_index=index,
-                            message=(
-                                f"trigger must be a metric name, not a condition "
-                                f"(found {smuggled[0].strip()!r} in {value!r})"
-                            ),
-                        )
-                    )
-                    continue
-                draft.setdefault("trigger", {})["metric"] = value
 
             else:
                 errors.append(PatchError(op_index=index, message=f"unknown op {op.op!r}"))

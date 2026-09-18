@@ -59,7 +59,7 @@ Source = Literal["llm", "rules"]
 class ProposedOp(BaseModel):
     """Mirror of EditOp, flattened for the model's output schema."""
 
-    op: Literal["set_field", "insert_after", "remove_step", "fill_branch", "set_trigger"]
+    op: Literal["set_field", "insert_after", "fill_branch"]
     rationale: str = ""
     step_id: str | None = None
     field_name: str | None = None
@@ -272,10 +272,11 @@ use value_number with a bare number of hours (24, not "24 hours" and not \
 "one day"). Never put prose in value_number fields.
 - insert_after: add a step after step_id. Put the new step in new_step_json as \
 a JSON object string, e.g. {"type":"sms","body":"...","send_if":"sms_consent == true"}
-- remove_step: delete step_id.
 - fill_branch: populate an empty split branch. Use step_id, branch ("true" or \
 "false"), and branch_steps_json as a JSON array string of step objects.
-- set_trigger: change the triggering metric via value_text.
+
+You cannot delete steps or change the trigger -- only adjust fields, insert
+steps, and fill empty branches. Work within that.
 
 Valid step types: delay, email, sms, split, update_profile.
 Exact shapes:
