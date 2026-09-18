@@ -164,13 +164,17 @@ class Sweeper:
         return max(0, int(remaining))
 
     def _loop(self) -> None:
-        while not self._stop.is_set():
+        # Wait a full interval BEFORE the first run. A scheduled job that fires
+        # the moment the process boots is surprising, and in a demo it steals
+        # the opening: the inbox fills before anyone clicks anything, and the
+        # first notification comes from the sweep rather than the event you
+        # deliberately fired.
+        self.last_run_at = time.monotonic()
+        while not self._stop.wait(self.interval):
             created = sweep_once()
             self.last_run_at = time.monotonic()
             if created and self.on_proposals:
                 self.on_proposals(created)
-            # Wait in small slices so stop() is responsive.
-            self._stop.wait(self.interval)
 
     def start(self) -> None:
         if self.running:
