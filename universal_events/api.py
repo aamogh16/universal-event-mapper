@@ -207,6 +207,7 @@ def _proposal_json(p: Any, full: bool = False) -> dict[str, Any]:
         "revision_count": p.revision_count, "headline": r.headline,
         "created_at": p.created_at, "applied_version": p.applied_version,
         "sent_to": p.sent_to, "corrections_applied": len(p.corrections_applied),
+        "supersedes": p.supersedes, "superseded_by": p.superseded_by,
         "source": r.source, "model": r.model_used, "cost_usd": r.cost_usd,
         "latency_ms": r.latency_ms, "confidence": r.confidence,
     }

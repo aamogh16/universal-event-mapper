@@ -267,10 +267,12 @@ async function status(){
 /* ------------------------------------------------------------- proposals */
 function card(p){
   const c = el('div', `card ${p.kind}${S.sel===p.id?' sel':''}`);
+  if(p.status === 'superseded') c.style.opacity = '.45';
   c.innerHTML = `<div class="meta">
       <span class="tag ${p.kind}">${p.kind}</span>
       <span class="tag ${p.origin}">${p.origin==='trigger'?'⚡ trigger':'🕐 sweep'}</span>
       ${p.status!=='pending'?`<span class="tag ${p.status}">${p.status}</span>`:''}
+      ${p.supersedes && p.supersedes.length?`<span class="tag create">absorbed ${p.supersedes.length}</span>`:''}
       ${p.revision_count>1?`<span class="tag">rev ${p.revision_count}</span>`:''}
     </div>
     <div class="hl">${esc(p.headline)}</div>
@@ -371,6 +373,20 @@ function detailView(){
       rt.appendChild(t);
     });
     wrap.appendChild(rt);
+  }
+
+  if(p.supersedes && p.supersedes.length){
+    wrap.appendChild(el('div','banner learn',
+      `<b>This replaces an earlier proposal for the same flow.</b><br>`
+      + p.supersedes.map(x => '· ' + esc(x)).join('<br>')
+      + `<div class="quiet" style="margin-top:6px">Two open edits to one
+         automation can't both be approved, so the newer finding absorbs the
+         older one.</div>`));
+  }
+  if(p.status === 'superseded'){
+    wrap.appendChild(el('div','warnbox',
+      `Superseded by a newer proposal for this flow`
+      + (p.superseded_by ? ` (<b>${esc(p.superseded_by)}</b>)` : '') + '.'));
   }
 
   const noticed = el('div','panel');
@@ -894,8 +910,11 @@ async function poll(){
     const d = await api('/proposals');
     S.proposals = d.proposals;
     // Only genuinely new, still-open proposals interrupt.
+    // A superseded proposal has been replaced; it should never interrupt.
     d.proposals.filter(p => p.status === 'pending' && !seen.has(p.id))
                .reverse().forEach(notify);
+    // Mark superseded ones as seen so they can never toast later.
+    d.proposals.filter(p => p.status === 'superseded').forEach(p => seen.add(p.id));
     if(S.view === 'proposals' && !S.sel) render();
     await status();
   }catch(e){ /* polling must never break the page */ }

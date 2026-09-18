@@ -24,7 +24,7 @@ from .patch import DiffLine, EditOp, apply_patch, diff_lines, render_diff
 
 STORE_PATH = PROJECT_ROOT / "proposals.json"
 
-Status = Literal["pending", "approved", "rejected", "revised"]
+Status = Literal["pending", "approved", "rejected", "revised", "superseded"]
 
 
 def _now() -> str:
@@ -93,6 +93,11 @@ class Proposal(BaseModel):
     rejection_feedback: list[str] = Field(default_factory=list)
     # Set when a campaign proposal is approved.
     sent_to: int | None = None
+    # A newer proposal for the same flow replaced this one.
+    superseded_by: str | None = None
+    # What this proposal replaced, and why -- shown so the reviewer knows the
+    # earlier finding was not dropped, it was absorbed.
+    supersedes: list[str] = Field(default_factory=list)
 
     @property
     def current(self) -> Revision:
@@ -147,6 +152,11 @@ def _upsert(proposal: Proposal) -> None:
             items[index] = proposal
             _save(items)
             return
+    # Point the superseded ones at their replacement.
+    replaced = {s.split("proposal ")[-1].rstrip(")") for s in proposal.supersedes}
+    for existing in items:
+        if existing.id in replaced:
+            existing.superseded_by = proposal.id
     items.append(proposal)
     _save(items)
 
@@ -219,6 +229,7 @@ def create_from_signal(
     # One open proposal per flow. Several signals can point at the same flow
     # (two lapsed donors, one donor-lapse flow), and stacking near-identical
     # proposals is noise the reviewer has to dismiss.
+    superseded: list[str] = []
     if want_campaign:
         for existing in _load():
             if (
@@ -228,17 +239,27 @@ def create_from_signal(
             ):
                 return None
     elif flow is not None:
-        for existing in _load():
-            # Key on flow AND signal kind. "The 5:30pm class no-show rate
-            # tripled" and "Sam no-showed four times" both target the same
-            # flow but are different findings -- collapsing them on flow id
-            # alone silently swallows every trigger-pattern proposal.
-            if (
-                existing.flow_id == flow["id"]
-                and existing.signal_kind == signal.kind
-                and existing.status in ("pending", "revised")
-            ):
+        items = _load()
+        for existing in items:
+            if existing.flow_id != flow["id"]:
+                continue
+            if existing.status not in ("pending", "revised"):
+                continue
+            if existing.signal_kind == signal.kind:
+                # Same finding, same flow: nothing new to say.
                 return None
+            # Different finding, SAME FLOW. Two open patches to one automation
+            # cannot both be approved -- the second would apply on top of the
+            # first. So the newer one supersedes the older, and records what it
+            # replaced so the earlier finding is visibly absorbed rather than
+            # silently dropped.
+            superseded.append(
+                f"{existing.signal_title} (proposal {existing.id})"
+            )
+            existing.status = "superseded"
+            existing.resolved_at = _now()
+        if superseded:
+            _save(items)
     else:
         for existing in _load():
             if (
@@ -281,6 +302,7 @@ def create_from_signal(
         signal_trigger_metric=signal.trigger_metric,
         context_lines=bundle.summary_lines,
         corrections_applied=[c.id for c in bundle.corrections],
+        supersedes=superseded,
     )
     proposal.revisions.append(_revision_from_audit(1, audit, flow))
     _upsert(proposal)
