@@ -28,6 +28,23 @@ WEB_DIR = PACKAGE_ROOT / "web"
 
 _sweeper: Any = None
 
+# The dashboard polls /api/status every few seconds, and the Klaviyo preflight
+# is a real HTTP call against an endpoint with a low rate limit. Running it on
+# every poll earned 429s and made the UI report "Klaviyo down" when nothing was
+# wrong. Connectivity does not change second to second, so cache it.
+_KLAVIYO_CHECK_TTL = 120.0
+_klaviyo_check: tuple[float, bool, str] | None = None
+
+
+def _klaviyo_status(force: bool = False) -> tuple[bool, str]:
+    global _klaviyo_check
+    now = time.monotonic()
+    if not force and _klaviyo_check and now - _klaviyo_check[0] < _KLAVIYO_CHECK_TTL:
+        return _klaviyo_check[1], _klaviyo_check[2]
+    ok, detail = KlaviyoClient().verify_credentials()
+    _klaviyo_check = (now, ok, detail)
+    return ok, detail
+
 
 @app.on_event("startup")
 def _start_sweeper() -> None:
@@ -114,7 +131,7 @@ def status() -> dict[str, Any]:
     for p in proposals.all_proposals():
         for r in p.revisions:
             spent += r.cost_usd or 0.0
-    klaviyo_ok, klaviyo_msg = KlaviyoClient().verify_credentials()
+    klaviyo_ok, klaviyo_msg = _klaviyo_status()
     return {
         "klaviyo": {"ok": klaviyo_ok, "detail": klaviyo_msg,
                     "revision": settings.klaviyo_api_revision},

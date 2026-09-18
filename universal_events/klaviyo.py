@@ -243,6 +243,11 @@ class KlaviyoClient:
                 f"Klaviyo rejected the key ({response.status_code}). Check the key and "
                 "that it has events:write / profiles:write scopes."
             )
+        if response.status_code == 429:
+            # Throttled, not broken. A bad key returns 401, so hitting a rate
+            # limit means the request got through -- reporting "down" here
+            # would be a lie, and it is our own polling that caused it.
+            return True, "Connected (rate limited on the preflight check)"
         return False, f"Unexpected status from Klaviyo: {response.status_code}"
 
 
