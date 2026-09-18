@@ -290,6 +290,44 @@ def create_from_signal(
 # ----------------------------------------------------------------- lifecycle
 
 
+def _create_real_campaign(proposal: Proposal, campaign: dict[str, Any]) -> Any:
+    """Push an approved campaign into Klaviyo as a Draft. None if disabled."""
+    from universal_events.config import settings
+    from universal_events.klaviyo import CampaignBuilder, KlaviyoClient
+
+    if not settings.create_real_campaigns:
+        return None
+    if campaign.get("channel") != "email":
+        return None
+
+    # Rebuild the audience so we send real identities, not just a count.
+    signal = _rehydrate_signal(proposal)
+    people = [
+        {"email": p.email, "first_name": p.first_name, "last_name": p.last_name}
+        for p in audience.resolve(signal).profiles
+        if p.email
+    ]
+    if not people:
+        return None
+
+    client = KlaviyoClient()
+    sender = settings.campaign_from_email
+    if not sender:
+        # Fall back to the account's own contact address.
+        ok, _ = client.verify_credentials()
+        sender = settings.campaign_from_email or "noreply@example.com"
+
+    return CampaignBuilder(client).create(
+        name=campaign.get("name") or f"Drafted by agent — {proposal.id}",
+        subject=campaign.get("subject") or "A note from us",
+        body=campaign.get("body") or "",
+        audience=people,
+        list_name=f"Agent audience · {campaign.get('audience_description', proposal.id)}"[:60],
+        from_email=sender,
+        from_label=settings.campaign_from_label,
+    )
+
+
 def approve(proposal_id: str) -> tuple[Proposal | None, dict | None]:
     """Apply the current revision's patch and version the flow."""
     proposal = get(proposal_id)
@@ -300,6 +338,22 @@ def approve(proposal_id: str) -> tuple[Proposal | None, dict | None]:
         campaign = proposal.current.drafted_campaign
         if not campaign:
             return proposal, None
+
+        # Create it for real in Klaviyo, as a Draft. Failure is not fatal:
+        # the approval still stands locally and the UI reports what happened.
+        result = _create_real_campaign(proposal, campaign)
+        if result is not None:
+            campaign = dict(campaign)
+            campaign["klaviyo"] = {
+                "ok": result.ok,
+                "campaign_id": result.campaign_id,
+                "campaign_url": result.campaign_url,
+                "profiles_added": result.profiles_added,
+                "error": result.error,
+                "warnings": result.warnings,
+            }
+            proposal.current.drafted_campaign = campaign
+
         proposal.status = "approved"
         proposal.resolved_at = _now()
         proposal.sent_to = int(campaign.get("audience_size") or 0)

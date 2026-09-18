@@ -323,9 +323,27 @@ function detailView(){
   const r = p.revisions[(S.rev||p.revisions.length)-1];
 
   if(p.status==='approved'){
-    wrap.appendChild(el('div','banner ok', p.kind==='campaign'
-      ? `✓ Sent to <b>${p.sent_to}</b> recipients <span class="quiet">(recorded locally — nothing actually transmitted)</span>`
-      : `✓ Applied — flow is now <b>v${p.applied_version}</b>`));
+    if(p.kind==='campaign'){
+      const k = (p.revisions[p.revisions.length-1].drafted_campaign||{}).klaviyo;
+      if(k && k.ok){
+        wrap.appendChild(el('div','banner ok',
+          `✓ Created in Klaviyo as a <b>Draft</b> campaign — `
+          + `<b>${k.profiles_added}</b> profiles added to the audience.<br>`
+          + `<a href="${esc(k.campaign_url)}" target="_blank">open it in Klaviyo →</a>`
+          + `<div class="quiet" style="margin-top:6px">Nothing was sent. A human presses send.</div>`
+          + (k.warnings && k.warnings.length
+              ? `<div class="quiet" style="margin-top:4px">${k.warnings.map(esc).join('<br>')}</div>` : '')));
+      } else if(k){
+        wrap.appendChild(el('div','warnbox',
+          `Approved locally, but Klaviyo creation failed: ${esc(k.error||'unknown')}`));
+      } else {
+        wrap.appendChild(el('div','banner ok',
+          `✓ Approved for <b>${p.sent_to}</b> recipients <span class="quiet">(recorded locally)</span>`));
+      }
+    } else {
+      wrap.appendChild(el('div','banner ok',
+        `✓ Applied — flow is now <b>v${p.applied_version}</b>`));
+    }
   }
 
   const head = el('div','panel');
@@ -703,11 +721,20 @@ function toastFor(p){
     // Resolve in place, so it is obvious that clicking Approve changed
     // something rather than just dismissing a card.
     t.className = 'toast done';
+    const kl = p.kind==='campaign'
+      ? ((res.proposal.revisions[res.proposal.revisions.length-1].drafted_campaign||{}).klaviyo)
+      : null;
     t.innerHTML = `<div class="tdone">✓ <span>${
       p.kind==='campaign'
-        ? `Sent to <b>${res.proposal.sent_to}</b> people`
+        ? (kl && kl.ok
+            ? `Created in Klaviyo as a Draft — <b>${kl.profiles_added}</b> profiles`
+            : `Approved for <b>${res.proposal.sent_to}</b> people`)
         : `Applied — <b>${esc(r.name||p.flow_name)}</b> is now v${r.version||''}`
-    }</span></div>`;
+    }</span></div>`
+      + (kl && kl.ok
+          ? `<div class="tlearned" style="color:var(--campaign)">`
+            + `<a href="${esc(kl.campaign_url)}" target="_blank">open the draft in Klaviyo →</a></div>`
+          : '');
     await refresh(); if(S.sel===p.id) await select(p.id); else render();
     setTimeout(() => t.remove(), 4200);
   };

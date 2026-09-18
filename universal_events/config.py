@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     gemini_mapping_model: str = "gemini-3.8-flash"
     gemini_agent_model: str = "gemini-3.5-flash-lite"
 
+    # --- campaigns ---
+    # Approving a campaign proposal creates a REAL Klaviyo campaign in Draft.
+    # Nothing is ever sent: send-jobs is deliberately not implemented.
+    create_real_campaigns: bool = True
+    campaign_from_email: str = ""
+    campaign_from_label: str = "Klaviyo Composer Demo"
+
     # --- demo controls ---
     sweep_interval_seconds: int = 60
     # Run the recurring job on a background thread when the server starts.
