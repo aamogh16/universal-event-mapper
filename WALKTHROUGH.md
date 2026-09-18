@@ -1,376 +1,274 @@
-# Test run — hit everything
+# Feature tour
 
-A complete pass through every feature, in an order that builds. Roughly 15
-minutes at a relaxed pace. Each step has a **✓ check** so you know it worked.
+Every capability, what it does, and how to exercise it. Each section says what
+to run and what you should see, so you can verify any claim in the README
+yourself.
+
+```bash
+./demo reset            # 304 backdated events, flows to v1, nothing learned
+./demo sync-profiles    # create those members as Klaviyo profiles
+./demo doctor           # Klaviyo reachable · provider · background job state
+./serve                 # http://localhost:8000
+```
+
+`doctor` should report `Klaviyo OK`, `LLM openai`, and `business fitness`.
+If Klaviyo fails or the provider reads `rules`, a key is missing — everything
+below still works, but the model-driven paths degrade to deterministic ones.
 
 ---
 
-## Part 0 · Setup (2 min)
+## 1 · Getting events in
+
+### Three mapping strategies, cheapest first
+
+`config → llm → heuristic`. The UI badges which one ran.
+
+| strategy | when | cost |
+|---|---|---|
+| **config** | a YAML mapping exists for this tool | free |
+| **llm** | unfamiliar payload — a model infers the mapping | ~$0.002 once |
+| **heuristic** | model unreachable — structural inference | free, offline |
 
 ```bash
-cd ~/dev/projects/agencyDemo
+./demo sources          # the tools, and which have a Klaviyo connector already
+./demo map door_access  # "lock.unlock" -> Gym Check-In, on an existing member
+./demo map tutoring     # picks the guardian, not the student
+./demo map body_scan    # machine output from an InBody scanner
 ```
 
-**Turn off the background sweeper for this run.** It fires on a timer and will
-interrupt you mid-walkthrough. You'll switch it on deliberately at the end.
+**What to look for:** the badge reads `llm` because no config exists for these.
+The `tutoring` payload contains two people — a learner and a guardian — and it
+picks the guardian, because that's who receives email and pays. The
+`personal_training` payload says `price_paid_cents: 96000` and comes back as
+**$960**, not $96,000.
 
-```bash
-# in .env, set:
-AUTO_SWEEP=false
-```
+**In the UI:** `Event ingest` tab. Each tool button shows the raw payload, the
+inferred mapping, a field-by-field trace, and a link to the created Klaviyo
+profile.
 
-Then:
+### The model returns paths, never values
 
-```bash
-./demo reset            # ~0.5s  · 304 backdated events, flows back to v1
-./demo sync-profiles    # ~7s    · the 29 members become Klaviyo profiles
-./demo doctor           # confirm everything is live
-```
+`universal_events/mapping/llm_mapper.py`. The model says *"the email lives at
+`patient.owner.contact_email`"* — it never repeats the address. Extraction
+happens in code. So it cannot put a wrong value into a marketing profile, and
+every decision is inspectable.
 
-**✓ check** — `doctor` should show:
-```
-Klaviyo    OK  Connected to Klaviyo account: amogh
-LLM        openai  model=gpt-5.4-mini
-events     304 in local store
-proposals  {'total': 0, ...}
-```
-
-If Klaviyo says FAIL or LLM says `rules`, stop — a key is missing.
-
----
-
-## Part 1 · The CLI, to see the machinery (3 min)
-
-You won't use these in the video, but they show what's underneath.
-
-```bash
-./demo signals
-```
-**✓** 7 signals, with real evidence. Note `kind`, `scope` and `origin` on each.
-These are **pure SQL** — no model involved. This is the raw material.
-
-```bash
-./demo flows
-```
-**✓** **6** automations, all **v1**, all the gym's — the other verticals are
-filtered out by `DEMO_VERTICAL=fitness`. Read `Class No-Show Win-Back`: trigger,
-`wait 3 days`, one email. Remember the 3 days.
-
-**✓** Note that none of the six has `handles_signals` covering a member who
-goes quiet. Six sensible flows and still a real gap.
-
-```bash
-./demo map door_access
-```
-**✓** Watch the badge: **`llm`**, because no config exists. The metric comes
-back **`Gym Check-In`** from a payload that literally says `lock.unlock`, and
-it lands on Kwame Osei, who is already in this account from Mindbody.
+### Connecting a tool, and why the model is a one-time cost
 
 ```bash
 ./demo connect-door
 ```
-**✓** The audience goes **9 → 8** and it tells you who came out and why. One
-model call, then 12 events in ~7ms for free.
 
-```bash
-./demo map tutoring
-```
-**✓** A payload from a tutoring company. Watch the badge: **`llm`**, because no
-config exists. Then check the identity — it picked **Danielle Brooks, the
-guardian**, not Ethan the student. Scroll to the field trace:
-`guardian.email_address → profile.email`. Ends with `202 Accepted` and a
-Klaviyo profile link.
+One inference, saved as a YAML config, then three weeks of check-ins replayed
+through that config — no further model calls.
 
-```bash
-./demo sources
-```
-**✓** Note the `Klaviyo connector` column: Mindbody, Toast and Bloomerang say
-**native — parity, not novelty**. That's the honesty baked into the code.
+**What to look for:** the win-back audience goes **9 → 8**. Chidi Mbeki drops
+out: he looked silent for 33 days because he stopped *booking classes*, but the
+door system shows he never stopped turning up. A system built on Mindbody alone
+would have emailed him "we miss you" while he was in the gym.
+
+Clicking it twice is safe — identical events are deduplicated, the same way
+Klaviyo deduplicates on `(profile, metric, unique_id)`.
+
+### Events reach Klaviyo for real
+
+`POST https://a.klaviyo.com/api/events`, revision `2026-07-15`, `202 Accepted`.
+202 means *queued*, not stored, which is why the profile lookup retries.
 
 ---
 
-## Part 2 · The UI (10 min)
+## 2 · Noticing things
+
+### Signals are computed, not generated
 
 ```bash
-./serve
-```
-Open **http://localhost:8000**. Also open your Klaviyo account in a second tab.
-
-### 2a · The opening frame
-
-**✓** Left rail says `Inbox · 0`. The right pane shows **"What it is watching
-right now"** — the same 7 signals, severity-coded, with the line *"computed by
-query, not by a model."*
-
-Top-right pills: `Klaviyo live` · `model gpt-5.4-mini` · `spent $0.00` ·
-`events 304`. Watch **spent** climb as you go.
-
-### 2b · The gym's other tools
-
-**Tab: `Event ingest`.** Read the line at the top — Ironline runs on Mindbody,
-which Klaviyo integrates, *and three other tools that it does not*.
-
-**Click `Kisi`** (the door-access system).
-
-**✓** Left: the raw payload — `"type": "lock.unlock"`, a unix timestamp, and the
-member buried under `actor.reference`. Right: a violet **⚡ Inferred by a model**
-badge. The metric reads **`Gym Check-In`**, *not* "Lock Unlocked" — it
-translated machine vocabulary into what a marketer would say.
-
-**✓** The profile is **Kwame Osei**, who already exists in this account from
-Mindbody. Click the Klaviyo link and confirm.
-
-**Click `Trainerize`.** **✓** Value reads **$960**, and there's a warning
-beneath: the payload said `price_paid_cents: 96000` and it caught the minor
-units.
-
-### 2b(ii) · Connect it properly — the payoff
-
-Scroll down to **`Connect the door system for real`** and note the current
-win-back audience is **9 people** (you'll see it again in 2e).
-
-**Click `Connect Kisi →`.** ~3 seconds.
-
-**✓** The panel replaces itself with:
-```
-inferred once    ~3000ms (model)
-metric           Gym Check-In
-saved as         mappings/kisi_door_access.yaml
-then replayed    12 check-ins in 7ms
-cost of those    $0.00 — config-driven, no model call
-```
-**✓** And a green banner:
-```
-Win-back audience went from 9 to 8.
-Chidi Mbeki came out — looked silent to Mindbody, but has been
-in the gym the whole time.
+./demo signals
 ```
 
-**This is the strongest moment in Part 1.** Two things just happened:
+Four findings, all SQL over the event mirror. No model is involved — *"the
+5:30pm no-show rate is 3.0× the prior 14 days (14/54 vs 4/46)"* is arithmetic,
+and arithmetic shouldn't be probabilistic.
 
-1. **The model was a one-time cost.** It inferred the mapping once, saved it as
-   a config, and the next twelve events cost nothing and took 7ms. A gym with
-   four tools pays for four inferences, ever.
-2. **A wrong marketing decision was prevented.** Chidi looked lapsed for 33
-   days because he stopped *booking classes*. He never stopped turning up. Any
-   system relying on Mindbody alone would have emailed him "we miss you" while
-   he was standing in the gym.
+Per-vertical thresholds matter: a gym member books weekly, a donor gives twice
+a year, so one global "inactive" threshold would hide exactly the lapsed donors
+worth finding.
 
-*Also try `physical_therapy` and `tutoring` further down if you want breadth —
-different industries, same machinery.*
+### Two execution patterns, and why both are needed
 
-### 2c · The trigger, arriving unprompted
-
-**Back to `Proposals`.** Confirm the dropdown reads **`Mindbody · Class
-no-show`**.
-
-**Click `Arm notification (20s)`.** The button starts counting down.
-
-**Now go to the `Flows` tab and read `Class No-Show Win-Back` while you wait.**
-This is the point — you should be doing something else when it interrupts you.
-
-**✓** ~20–30s later a toast slides in bottom-right with a pulsing amber dot:
-```
-⚡ BUSINESS NOTIFICATION
-Sam Whitfield has 3 class no-shows in 30 days
-I looked at Class No-Show Win-Back and made a fix… does this look right?
-[✓ Approve]  [Not right]  [See the change]
+```bash
+./demo send fitness class_no_show   # trigger: reacts to one arriving event
+./demo sweep                        # recurring: scans everyone, all windows
+./demo runs                         # both, side by side
 ```
 
-### 2d · Inspect, then approve
+| | sees | finds |
+|---|---|---|
+| ⚡ **trigger** | one profile, instantly | *"Sam has 3 no-shows in 30 days"* |
+| 🕐 **sweep** | everyone, across time windows | *"the 5:30pm rate tripled"*, *"Jordan went quiet"* |
 
-**Click `See the change`.** Read the panel top to bottom:
+They differ by **scope of data**, not timing. A trigger can only react to
+something that *arrives* — and nothing fires when a member loses interest.
+Finding Jordan requires looking at the gap between his last event and now,
+which only a recurring scan can do.
 
-1. **What it noticed** — the signal plus the agent's restatement
-2. **Context it pulled first** — chips: *20 events · $159 lifetime value · flow v1*
-3. **What it audited** — names the specific steps
-4. **The change it made** — the red/green diff
-5. Footer: model, cost, latency, confidence
+Set `AUTO_SWEEP=true` and the recurring job runs on a background thread. Watch
+the `Activity` tab fill on its own; the `created=0` rows at ~30ms are the point
+— it costs nothing when there's nothing new, because proposals deduplicate.
 
-**✓** The diff shows real `[s1]`-style step ids and coloured +/- lines.
+---
 
-**Click `✓ Approve`.**
+## 3 · Proposing
 
-**✓** Banner turns green: `✓ Applied — flow is now v2`.
+Three kinds, chosen by what the account actually needs:
 
-**Go to `Flows`.** **✓** `Class No-Show Win-Back` now reads **v2**, and the step
-it changed is different. That's a real version bump.
+| kind | when | shows |
+|---|---|---|
+| **patch** | a flow exists but mishandles the signal | a real diff |
+| **create** | no flow covers this signal at all | a drafted automation |
+| **campaign** | people are *already* in the bad state | a message and its audience |
 
-### 2e · The recurring sweep, and all three proposal kinds
+The campaign kind exists because a new flow only catches future cases. It does
+nothing for the eight members who already left.
 
-**Back to `Proposals` → click `Run sweep now`.** Takes ~10s (five model calls).
+### The model returns edit operations, never a rewritten flow
 
-**✓** Four or five proposals appear, colour-coded in the left rail:
-- 🔵 `patch` — a flow exists but mishandles something
-- 🟣 `create` — **nothing** handled it, so it drafted a whole new automation
-- 🟢 `campaign` — people are already in the bad state
+`composer/patch.py`. Three operations only:
 
-**Open the 🟣 `create` one.** **✓** Its context chips say *"no flow covers
-'lapsed_member'"*. The diff is **all green** — every line is an addition,
-because nothing existed. Check the trigger line: it says
-`segment = Members with no booking in 21 days`, **not** an event — because
-going quiet fires no event.
-
-**Open the 🟢 `campaign` one.** **✓** It shows:
-- **8 people** (9 if you skipped 2b(ii)), with the counting rule spelled out
-- Actual names: Jordan Avery, Rada Antonova, Chidi Mbeki…
-- A complete email with `{{ first_name }}` merge tags
-
-### 2f · Reject it — the important part
-
-In the campaign proposal's feedback box, type **exactly**:
-
-```
-Our members are mostly older and hate texts. Never use SMS. And don't send anything before 9am.
+```python
+"set_field"      # change a scalar on a step
+"insert_after"   # add a new step after an existing one
+"fill_branch"    # put steps into a split's empty branch
 ```
 
-**Click `✕ Reject with feedback`.** ~5s.
+Two others existed — `remove_step` and `set_trigger` — and across measured runs
+the model never chose either, while both produced the only bad patches seen.
+Removing a capability beat policing it.
 
-**✓** Four things should happen:
-1. Tabs appear: `revision 1` / `revision 2 · after your feedback` — **click
-   between them and compare**
-2. The revised campaign's **timing moved to after 9am**
-3. A violet banner: **"Learned from that — it won't need telling again"**
-4. **Left rail** now lists the corrections:
-```
-· Never use SMS for this account.        (fitness)
-· Do not send before 9am local time.     (all verticals)
-```
+**The diff is produced by applying the patch** (`composer/proposals.py`, in
+`_revision_from_audit`) and diffing the result — not by the model describing its
+own change. That's what makes the approve button trustworthy.
 
-**✓ The scope split is the detail worth checking.** You want SMS on `fitness`
-and 9am on `all verticals`. It lands ~4 times in 5. If both say `all
-verticals`, that's fine for a test run — just know it's the one beat to
-re-check before recording.
+### Context is assembled before it reasons
 
-### 2g · Prove it remembers  ← the payoff
+`composer/context.py`. Shown in the UI as chips: how many events for this
+profile, lifetime value, which flow, how many learned corrections apply. The
+agent reads history before forming an opinion, and you can see what it read.
 
-**First approve revision 2** (it's good now). That matters: while a campaign
-proposal is `pending` or `revised`, duplicates are suppressed — approving lifts
-the block so a fresh one can be created.
+### Notifications have to earn the interruption
 
-**Then click `Run sweep now`** and open the new campaign proposal.
+Triggers always interrupt — something just happened to someone. A scheduled
+sweep only interrupts for high-severity findings; everything else waits in the
+inbox with a count. An agent that interrupts eight times has become the push
+notification it was meant to replace.
 
-**✓** Four things to check:
-1. A violet **`2 LEARNED CORRECTIONS APPLIED`** badge at the top
-2. `channel` reads **`email · tomorrow 9am local time`** — not `now`
-3. The copy has **no visit-count line**
-4. The left-rail corrections now read **`used 1×`**
+---
 
-**✓** And in its own audit text, something like: *"a gentle win-back note at 9am
-local time matches the account's scheduling constraint without mentioning visit
-counts."* It is citing your correction as the reason for its choice.
+## 4 · Approving, rejecting, and learning
 
-Same signal, same eight people, nothing said to it — and the output differs in
-exactly the two ways you corrected. That is the controlled experiment, and it is
-the most convincing thing in the demo.
-
-> **Note:** sweeping *without* approving first produces nothing, and that is
-> correct — proposals already exist for those signals. An earlier version of
-> this doc told you to just sweep again; that was wrong.
-
-### 2h · Approve the campaign — it becomes real
-
-**Go back to the campaign proposal** (now `revised`) and **click
-`✓ Approve & send`**.
-
-**✓** Green banner:
-```
-✓ Created in Klaviyo as a Draft campaign — 9 profiles added
-  open it in Klaviyo →
-  Nothing was sent. A human presses send.
+```bash
+./demo inbox
+./demo show <id>
+./demo approve <id>
+./demo reject <id> "don't send these immediately, schedule for 9am"
+./demo corrections
 ```
 
-**Click the link.** **✓** In your Klaviyo tab: a real campaign, status
-**Draft**, with a real audience list. Nothing sent.
+### Approve
 
-### 2i · Both patterns, side by side
+A **patch** versions the flow (`v1 → v2`, check `./demo flows`). A **create**
+adds a new flow as a draft. A **campaign** creates a **real Klaviyo campaign in
+Draft status** with the audience attached — and sends nothing.
 
-**`Activity` tab.**
+### Reject, and it revises
 
-**✓** A table with a **"what it could see"** column:
+Feedback in plain language produces a new revision rather than discarding the
+work. The UI keeps both, so you can click between `revision 1` and
+`revision 2 · after your feedback`.
 
-| pattern | scope |
+### It learns — and this is the part worth verifying
+
+Reject a campaign with:
+
+```
+Don't send these the moment you write them — schedule for 9am local. And don't tell members how many visits they've had, it reads like surveillance.
+```
+
+Two sentences become two rules, each scoped independently — one to this
+business, one to every business. Then **approve the revision** (that lifts the
+duplicate block) and **sweep again**.
+
+**What to look for in the new proposal:**
+1. A `2 learned corrections applied` badge
+2. `channel` reads `email · 9am local time`, not `now`
+3. No visit-count line in the copy
+4. The corrections now read `used 1×`
+5. Its own audit text citing the constraint as the reason for its choice
+
+Same signal, same people, nothing said to it — and the output differs in
+exactly the two ways you corrected. That's a controlled experiment, not a claim.
+
+---
+
+## 5 · The reactive path, for contrast
+
+`Chat · today` tab, or `POST /api/chat`. Describe a campaign and it builds one.
+The generation is good; that isn't the problem.
+
+It reports what it **couldn't verify** — attendance thresholds, audience size —
+and guesses a percentage where the proactive path counted eight people and
+named them. The real difference: to get value from the chat you have to already
+know the 5:30pm class has a problem.
+
+---
+
+## Reference
+
+### Everything the CLI does
+
+```
+doctor          preflight: keys, connectivity, data, background job state
+reset           wipe and reseed — identical starting state every time
+sync-profiles   create the seeded members as Klaviyo profiles
+sources         the mock tools, and which Klaviyo already integrates
+map <tool>      map one payload and send it
+connect-door    infer a mapping once, save it, replay the history
+signals         what it notices, computed by query
+sweep           run the recurring job once
+send <src> <ev> fire one event and let the trigger react
+inbox / show    the proposal inbox, and one proposal in full
+approve / reject
+corrections     what it has been taught, and how often it's been used
+flows           automations and their versions
+runs            both execution patterns, side by side
+```
+
+### What's real and what isn't
+
+| | |
 |---|---|
-| ⚡ trigger | one profile |
-| 🕐 sweep | all profiles + windows |
+| Events reaching Klaviyo | **real** — live API, 202, profiles you can open |
+| Signals and audience counts | **real** — SQL over the event mirror |
+| Audits, copy, revisions | **real** — live model calls, cost shown per proposal |
+| Learned corrections | **real** — persisted, scoped, re-applied |
+| Campaigns | **real** — approving creates a Klaviyo Draft |
+| Campaign *sending* | **never** — `send-jobs` is deliberately not implemented |
+| Flows | **mock** — simplified stand-ins, not Klaviyo flow definitions |
 
-That column is the whole argument for building both.
+### Measured, not assumed
 
-### 2j · The contrast
+- **model choice:** `gpt-5-nano` took 77s and missed the obvious finding;
+  `gpt-5-mini` took 23s and cost *more* than `gpt-5.4-mini`, which answers in
+  ~5s. Per-token price is not cost when a model reasons more.
+- **~$0.0035** per proposal. ~$350/day for a daily proposal across 100k
+  businesses.
+- Prompt caching would cut input cost ~90% on the repeated system prompts; not
+  implemented, because the absolute numbers are trivial at this scale.
 
-**`Chat · today` tab.** Click the first suggested prompt.
+### If something looks wrong
 
-**✓** It generates a good campaign — then read its own admission in the amber
-box: *"I could not verify your actual attendance thresholds, member status
-rules, or audience size."*
-
-**✓** Beneath it, a side-by-side: **its guess** (a percentage range) vs **the
-agent** (9 people, counted, named).
-
----
-
-## Part 3 · The background job (2 min)
-
-Now switch it on:
-
-```bash
-# in .env
-AUTO_SWEEP=true
-SWEEP_INTERVAL_SECONDS=60
-```
-
-Restart `./serve`, then leave it alone for two minutes and go do something else.
-
-**✓** Come back to the `Activity` tab. Rows have appeared **that you didn't
-trigger**:
-```
-23:26:35  sweep  signals=7  created=0   34ms
-23:27:35  sweep  signals=7  created=0   18ms
-```
-
-Those `created=0` / `~30ms` rows are the point: it's genuinely running, and it
-**costs nothing when there's nothing new**, because proposals dedupe. That's a
-real production property.
-
----
-
-## Reset between runs
-
-```bash
-./demo reset && ./demo sync-profiles
-```
-
-This clears proposals, corrections and flow versions, and reseeds. It does
-**not** delete anything from Klaviyo — profiles, lists and draft campaigns stay
-until you delete them there.
-
-## If something looks wrong
-
-| symptom | cause / fix |
+| symptom | cause |
 |---|---|
-| inbox already full on open | background sweeper ran — set `AUTO_SWEEP=false` |
-| `Run sweep now` creates nothing | proposals already open for those signals; `./demo reset` |
-| toast never arrives | check the `Fire event` dropdown is on `Mindbody · Class no-show` |
-| a proposal says `deterministic fallback` | OpenAI call failed; it degraded on purpose — check `doctor` |
-| campaign approval errors | you may be near the 250-profile ceiling; check `doctor` |
-
-## Also worth checking once
-
-- **Click `Connect Kisi` twice.** The check-in count should stay at 12 and the
-  event counter shouldn't move — identical events are deduplicated, the same way
-  Klaviyo deduplicates on (profile, metric, unique_id).
-- **Reject a proposal, then reset with it open.** The detail pane should clear
-  itself rather than showing a ghost.
-- **Watch the `spent` pill.** It should climb by roughly $0.0035 per proposal.
-
-## What you've now demonstrated
-
-- events from an unintegrated tool → real Klaviyo, model **or** offline inference
-- 7 problems found by query, no model
-- a notification that interrupts you, unprompted
-- all three actions: fix a flow · write a new flow · draft a campaign
-- approve → a real version bump, and a real Klaviyo draft campaign
-- reject in plain English → revised, and two rules learned with correct scopes
-- the next proposal honouring those rules unprompted
-- both execution patterns, and why neither can do the other's job
-- the reactive path, admitting what it can't know
+| inbox full on open | the background sweeper ran — set `AUTO_SWEEP=false` |
+| sweep creates nothing | proposals already open for those signals; `reset` |
+| yellow `deterministic fallback` | the model call failed; it degraded on purpose |
+| a proposal looks thin | output varies per run; try another |

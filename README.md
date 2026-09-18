@@ -30,8 +30,6 @@ thing this prototype explores is the part that isn't there yet:
 **an agent that gets told no, is right the second time, and doesn't need
 telling again.**
 
-See [`PITCH.md`](PITCH.md) for the full positioning and the claims to avoid.
-
 ---
 
 ## Quick start
@@ -155,10 +153,13 @@ burned ~11k reasoning tokens and still missed the obvious finding.
 | Campaign *sending* | **never** — `send-jobs` is deliberately not implemented |
 
 Flows staying mock is deliberate — they are a simplified stand-in so the
-reasoning is legible. Campaign *sending* is deliberate too: on a free plan,
-email #501 auto-upgrades the account with no grace period, and no version of
-this demo is improved by emailing nine fictional people. See
-[`SCOPE-campaigns.md`](SCOPE-campaigns.md).
+reasoning is legible. A real Klaviyo flow definition is a graph of linked
+actions with a separate entry filter; an ordered list keeps the diff readable.
+
+Campaign *sending* is deliberate too. `POST /api/campaigns/{id}/send-jobs` is
+the only endpoint that transmits email, and it is intentionally not
+implemented: on a free plan, email #501 auto-upgrades the account with no grace
+period, and nothing about this is improved by emailing nine fictional people.
 
 ### A note on profiles
 

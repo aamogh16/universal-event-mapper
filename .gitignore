@@ -15,3 +15,8 @@ runs.json
 # saved by the app is not -- `demo reset` deletes it so the next run shows
 # the model inferring it again.
 universal_events/mappings/kisi_door_access.yaml
+
+# Personal prep material — kept locally, not part of the shared repo.
+DEMO-SCRIPT.md
+SCOPE-campaigns.md
+PITCH.md
