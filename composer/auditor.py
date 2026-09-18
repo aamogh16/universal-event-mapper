@@ -131,10 +131,18 @@ class LearnedRule(BaseModel):
     one of them.
     """
 
-    rule: str = Field(description="Short imperative, e.g. 'Never propose SMS'")
+    rule: str = Field(
+        description="One short imperative, e.g. 'Never propose SMS'. Return ONE "
+        "rule per distinct instruction the user gave. Do not restate the same "
+        "instruction twice in different words."
+    )
     applies_everywhere: bool = Field(
-        description="True only if this holds for ANY industry. Anything tied to "
-        "this business's audience, product or channel preferences is False."
+        description="False if the rule depends on WHO this business's customers "
+        "are, what it sells, or which channels they prefer -- those are specific "
+        "to this account. True only for rules any business in any industry would "
+        "want, such as timing or frequency conventions. When uncertain, choose "
+        "False: over-applying one account's preference to others is the worse "
+        "mistake."
     )
 
 

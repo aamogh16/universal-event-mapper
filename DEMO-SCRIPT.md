@@ -163,6 +163,13 @@ Then show, in order:
 them differently — the SMS rule is specific to this gym, the 9am rule it
 decided applies to any business."
 
+> **Check this one before you keep the take.** Scoping is a model judgment and
+> it lands ~4 times in 5. You want the SMS rule on `fitness` and the 9am rule
+> on `all verticals`. If both come back `all verticals`, reject again on a
+> fresh `reset` — it is the one beat worth re-shooting for. If you would rather
+> not depend on it, narrate the shape instead: "two sentences became two
+> separate rules, each with its own scope" is true every time.
+
 **Then the proof.** Click `Run sweep now` again, open any new proposal, and
 point at the context chips:
 
