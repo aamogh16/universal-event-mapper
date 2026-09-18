@@ -1,11 +1,9 @@
-"""LLM-driven mapping via Gemini.  [STUB -- not implemented]
+"""LLM-driven mapping: infer how to read a payload nobody has integrated.
 
-Verified working against the live API (Sept 2026):
-    client = genai.Client(api_key=...)
-    client.models.generate_content(model="gemini-3.8-flash", contents=...)
-Note: `gemini-2.5-flash` returns 404 for new API keys. Use 3.5-flash-lite / 3.8-flash.
+Used when no config matches. Falls through to the offline heuristic engine if
+the model is unreachable, so this path can fail without breaking ingestion.
 
-DESIGN DECISION TO PRESERVE:
+THE DESIGN DECISION THAT MATTERS:
 Ask the model for PATHS, not VALUES.
 
 The model's job is to say "the email lives at `patient.owner.contact_email`",
