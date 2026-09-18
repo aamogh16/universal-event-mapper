@@ -106,6 +106,24 @@ def _find_container(steps: list[dict], step_id: str) -> tuple[list[dict], int] |
     return None
 
 
+def assign_ids(flow: dict, steps: list[dict]) -> None:
+    """Give every step an id, descending into split branches.
+
+    Recursive because an inserted step can itself be a split carrying nested
+    steps. Numbering only the top level leaves those without ids, and the
+    validator -- which walks the whole tree -- then rejects the patch with
+    "a step is missing an id", losing an otherwise good proposal.
+    """
+    for step in steps:
+        if not step.get("id"):
+            step["id"] = next_step_id(flow)
+        if step.get("type") == "split":
+            for branch in ("true_branch", "false_branch"):
+                nested = step.get(branch)
+                if isinstance(nested, list):
+                    assign_ids(flow, nested)
+
+
 def next_step_id(flow: dict) -> str:
     """Allocate an unused step id."""
     used = {s.get("id", "") for s in walk_steps(flow.get("steps") or [])}
@@ -147,9 +165,11 @@ def apply_patch(flow: dict, ops: list[EditOp]) -> PatchResult:
                         PatchError(op_index=index, message=f"bad step type {new_step.get('type')!r}")
                     )
                     continue
-                new_step.setdefault("id", next_step_id(draft))
                 container, position = located
                 container.insert(position + 1, new_step)
+                # After insertion, so nested steps are reachable from the flow
+                # and cannot be handed an id that already exists.
+                assign_ids(draft, [new_step])
 
             elif op.op == "remove_step":
                 located = _find_container(draft.get("steps") or [], op.step_id or "")
@@ -173,11 +193,9 @@ def apply_patch(flow: dict, ops: list[EditOp]) -> PatchResult:
                             PatchError(op_index=index, message=f"bad step type {entry.get('type')!r}")
                         )
                         continue
-                    entry.setdefault("id", next_step_id(draft))
                     new_steps.append(entry)
-                    # Register the id so the next allocation doesn't collide.
-                    step.setdefault(key, []).append(entry)
                 step[key] = new_steps
+                assign_ids(draft, new_steps)
 
             elif op.op == "set_trigger":
                 draft.setdefault("trigger", {})["metric"] = op.value
