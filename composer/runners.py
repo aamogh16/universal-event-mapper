@@ -113,6 +113,8 @@ def on_event(
 def sweep_once(vertical: str | None = None) -> list[Any]:
     """Recurring pattern: one pass over aggregates and lapsed profiles."""
     started = time.monotonic()
+    if vertical is None:
+        vertical = settings.demo_vertical or None
     found = signals.detect_aggregate(vertical)
     created = []
     for signal in found:

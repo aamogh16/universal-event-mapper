@@ -1,0 +1,28 @@
+{
+  "id": "flow_fitness_welcome",
+  "name": "New Member Welcome",
+  "vertical": "fitness",
+  "business": "Ironline Strength Co.",
+  "status": "live",
+  "version": 1,
+  "trigger": { "type": "metric", "metric": "Member Created" },
+  "handles_signals": [],
+  "steps": [
+    { "id": "s1", "type": "delay", "hours": 1 },
+    {
+      "id": "s2",
+      "type": "email",
+      "subject": "Welcome to Ironline, {{ first_name }}",
+      "body": "Hi {{ first_name }}, welcome in. Your membership is active and you can book any class on the schedule. If you want a hand picking your first one, just reply.",
+      "cta": "Browse the schedule"
+    },
+    { "id": "s3", "type": "delay", "hours": 72 },
+    {
+      "id": "s4",
+      "type": "email",
+      "subject": "Booked your first class yet?",
+      "body": "Hi {{ first_name }}, most new members start with Barbell Club or Mobility. Both are beginner-friendly and Coach Ray runs them.",
+      "cta": "Book a class"
+    }
+  ]
+}

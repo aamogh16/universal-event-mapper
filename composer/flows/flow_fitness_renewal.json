@@ -1,0 +1,20 @@
+{
+  "id": "flow_fitness_renewal",
+  "name": "Membership Renewal Reminder",
+  "vertical": "fitness",
+  "business": "Ironline Strength Co.",
+  "status": "live",
+  "version": 1,
+  "trigger": { "type": "metric", "metric": "Membership Renewed" },
+  "handles_signals": [],
+  "steps": [
+    { "id": "s1", "type": "delay", "hours": 648 },
+    {
+      "id": "s2",
+      "type": "email",
+      "subject": "Your membership renews soon",
+      "body": "Hi {{ first_name }}, your Unlimited Monthly renews in a few days. Nothing to do if you're happy — it'll carry on as normal.",
+      "cta": "Manage membership"
+    }
+  ]
+}

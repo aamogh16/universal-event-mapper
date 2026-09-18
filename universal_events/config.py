@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     campaign_from_label: str = "Klaviyo Composer Demo"
 
     # --- demo controls ---
+    # Which business the demo is about. Signals, flows and proposals are all
+    # filtered to it. Set to "" to show every seeded vertical at once.
+    demo_vertical: str = "fitness"
     sweep_interval_seconds: int = 60
     # Run the recurring job on a background thread when the server starts.
     auto_sweep: bool = True

@@ -237,7 +237,7 @@ def _proposal_json(p: Any, full: bool = False) -> dict[str, Any]:
 def get_signals() -> dict[str, Any]:
     audience, _, _, _, _, _, signals = _c()
     out = []
-    for s in signals.detect_aggregate():
+    for s in signals.detect_aggregate(settings.demo_vertical or None):
         aud = audience.resolve(s)
         out.append({
             "kind": s.kind, "scope": s.scope, "title": s.title, "detail": s.detail,
@@ -291,9 +291,9 @@ def reject(proposal_id: str, req: RejectReq) -> dict[str, Any]:
 @app.post("/api/sweep")
 def sweep(campaigns: bool = True) -> dict[str, Any]:
     _, _, _, _, proposals, runners, signals = _c()
-    made = runners.sweep_once()
+    made = runners.sweep_once(settings.demo_vertical or None)
     if campaigns:
-        for s in signals.detect_aggregate():
+        for s in signals.detect_aggregate(settings.demo_vertical or None):
             if s.kind in ("lapsed_member", "lapsed_donor"):
                 p = proposals.create_from_signal(s, want_campaign=True)
                 if p:
@@ -405,6 +405,7 @@ def corrections() -> dict[str, Any]:
 @app.get("/api/flows")
 def flows() -> dict[str, Any]:
     _, _, flow_store, patch, *_ = _c()
+    scope = settings.demo_vertical or None
     return {
         "flows": [
             {"id": f["id"], "name": f["name"], "version": f["version"],
@@ -412,6 +413,7 @@ def flows() -> dict[str, Any]:
              "handles_signals": f.get("handles_signals") or [],
              "outline": patch.render_outline(f)}
             for f in flow_store.all_flows()
+            if not scope or f.get("vertical") == scope
         ],
         "history": flow_store.history(),
     }
