@@ -586,17 +586,19 @@ function viewIngest(){
 
     cbox.innerHTML = `<h3>Door system connected</h3>
       <dl class="kv">
-        <dt>inferred once</dt><dd>${r.inference_ms}ms
-          ${r.inferred_from_model ? '<span class="quiet">(model)</span>'
-                                  : '<span style="color:var(--warn)">(offline)</span>'}</dd>
+        <dt>the model read</dt><dd>1 payload it had never seen —
+          <b>${r.inference_ms}ms</b>
+          ${r.inferred_from_model ? '' : '<span style="color:var(--warn)">(offline fallback)</span>'}</dd>
+        <dt>and wrote</dt><dd>the mapping below, from scratch</dd>
         <dt>metric</dt><dd><b>${esc(r.metric)}</b></dd>
         <dt>then replayed</dt><dd>${r.events_ingested} check-ins in <b>${r.batch_ms}ms</b></dd>
         <dt>cost of those</dt><dd style="color:var(--campaign)">${esc(r.per_event_after_setup)}</dd>
         ${landedLine}
       </dl>
       ${dropped}
-      <div class="quiet" style="margin-top:11px">The model is a one-time
-      onboarding cost, not a per-event cost.</div>`;
+      <div class="quiet" style="margin-top:11px">The model figured out this
+      tool once. Every check-in after that reused its answer — which is why
+      the model is a one-time onboarding cost, not a per-event cost.</div>`;
 
     // Before and after, on the actual data. The transformation is the thing
     // being claimed, so show it rather than summarise it.

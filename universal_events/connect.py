@@ -53,7 +53,10 @@ class ConnectResult:
 
     @property
     def per_event_after_setup(self) -> str:
-        return "$0.00 — config-driven, no model call"
+        # Deliberately not "config-driven": that reads as a mapping someone
+        # shipped, when the model authored it seconds earlier. The point is the
+        # model taught the system once, not that we already knew the shape.
+        return "$0.00 — reusing the mapping the model just wrote"
 
 
 def _mapping_to_config(
