@@ -933,9 +933,15 @@ function dropStaleToasts(){
 
 async function poll(){
   try{
-    const d = await api('/proposals');
+    // Runs and corrections are fetched too: an armed notification fires
+    // server-side with no click, so nothing else would ever refresh them and
+    // the Activity tab would sit frozen at page-load state.
+    const [d, r, c] = await Promise.all([
+      api('/proposals'), api('/runs'), api('/corrections')]);
     const vanished = S.sel && !d.proposals.some(p => p.id === S.sel);
     S.proposals = d.proposals;
+    S.runs = r.runs;
+    S.corrections = c.corrections;
 
     // Only genuinely new, still-open proposals interrupt. A superseded one
     // has been replaced, so it must never interrupt.
@@ -951,6 +957,8 @@ async function poll(){
     } else if(S.view === 'proposals'){
       // Left column only, so a half-typed rejection survives the poll.
       refreshInbox();
+    } else if(S.view === 'activity'){
+      render();
     }
     await status();
   }catch(e){ /* polling must never break the page */ }
