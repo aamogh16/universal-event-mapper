@@ -74,6 +74,7 @@ class Proposal(BaseModel):
     signal_kind: str = ""
     signal_title: str = ""
     signal_scope: str = ""
+    signal_severity: str = "medium"
     signal_detail: str = ""
     # Persisted so a revision reasons from the SAME evidence as revision 1.
     # Re-detecting later could legitimately yield different numbers, which
@@ -272,6 +273,7 @@ def create_from_signal(
         signal_kind=signal.kind,
         signal_title=signal.title,
         signal_scope=signal.scope,
+        signal_severity=getattr(signal, "severity", "medium"),
         signal_detail=signal.detail,
         signal_evidence=dict(signal.evidence or {}),
         signal_profile_key=signal.profile_key,

@@ -82,6 +82,11 @@ I looked at Class No-Show Win-Back and made a fix. …does this look right?
 **Say:** "Nobody asked it anything. An event landed, it recognised a pattern in
 that member's history, and it interrupted me. That's the business notification."
 
+**And the restraint line, when the sweep fills the inbox later:** "It doesn't
+interrupt me for everything. Something just happened to Sam, so that gets my
+attention now. The rest are real findings but they can wait — that's the
+difference between a business notification and a push notification."
+
 ---
 
 ## 2:15 – 3:00 · What it actually did · APPROVE
