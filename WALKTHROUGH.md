@@ -52,8 +52,12 @@ These are **pure SQL** — no model involved. This is the raw material.
 ```bash
 ./demo flows
 ```
-**✓** 4 automations, all **v1**. Read `Class No-Show Win-Back` — trigger, then
-`wait 3 days`, then one email. Remember the 3 days.
+**✓** **6** automations, all **v1**, all the gym's — the other verticals are
+filtered out by `DEMO_VERTICAL=fitness`. Read `Class No-Show Win-Back`: trigger,
+`wait 3 days`, one email. Remember the 3 days.
+
+**✓** Note that none of the six has `handles_signals` covering a member who
+goes quiet. Six sensible flows and still a real gap.
 
 ```bash
 ./demo map door_access
@@ -238,13 +242,31 @@ and 9am on `all verticals`. It lands ~4 times in 5. If both say `all
 verticals`, that's fine for a test run — just know it's the one beat to
 re-check before recording.
 
-### 2g · Prove it remembers
+### 2g · Prove it remembers  ← the payoff
 
-**Click `Run sweep now` again.** Open any newly created proposal.
+**First approve revision 2** (it's good now). That matters: while a campaign
+proposal is `pending` or `revised`, duplicates are suppressed — approving lifts
+the block so a fresh one can be created.
 
-**✓** Its context chips now include a violet **`2 learned corrections
-applied`**. Nobody reminded it. Every proposal from here on is generated under
-those constraints.
+**Then click `Run sweep now`** and open the new campaign proposal.
+
+**✓** Four things to check:
+1. A violet **`2 LEARNED CORRECTIONS APPLIED`** badge at the top
+2. `channel` reads **`email · tomorrow 9am local time`** — not `now`
+3. The copy has **no visit-count line**
+4. The left-rail corrections now read **`used 1×`**
+
+**✓** And in its own audit text, something like: *"a gentle win-back note at 9am
+local time matches the account's scheduling constraint without mentioning visit
+counts."* It is citing your correction as the reason for its choice.
+
+Same signal, same eight people, nothing said to it — and the output differs in
+exactly the two ways you corrected. That is the controlled experiment, and it is
+the most convincing thing in the demo.
+
+> **Note:** sweeping *without* approving first produces nothing, and that is
+> correct — proposals already exist for those signals. An earlier version of
+> this doc told you to just sweep again; that was wrong.
 
 ### 2h · Approve the campaign — it becomes real
 
@@ -331,6 +353,15 @@ until you delete them there.
 | toast never arrives | check the `Fire event` dropdown is on `Mindbody · Class no-show` |
 | a proposal says `deterministic fallback` | OpenAI call failed; it degraded on purpose — check `doctor` |
 | campaign approval errors | you may be near the 250-profile ceiling; check `doctor` |
+
+## Also worth checking once
+
+- **Click `Connect Kisi` twice.** The check-in count should stay at 12 and the
+  event counter shouldn't move — identical events are deduplicated, the same way
+  Klaviyo deduplicates on (profile, metric, unique_id).
+- **Reject a proposal, then reset with it open.** The detail pane should clear
+  itself rather than showing a ghost.
+- **Watch the `spent` pill.** It should climb by roughly $0.0035 per proposal.
 
 ## What you've now demonstrated
 
