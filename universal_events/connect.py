@@ -43,6 +43,11 @@ class ConnectResult:
     batch_cost: float = 0.0
     profile: str | None = None
     metric: str | None = None
+    # The sample, and what it became. Shown side by side so the transformation
+    # is visible rather than asserted.
+    sample_payload: dict[str, Any] = field(default_factory=dict)
+    sample_mapped: dict[str, Any] = field(default_factory=dict)
+    sample_traces: list[dict[str, Any]] = field(default_factory=list)
     error: str | None = None
     warnings: list[str] = field(default_factory=list)
 
@@ -110,6 +115,12 @@ def connect_tool(
     out.inference_cost = mapping.cost_estimate if hasattr(mapping, "cost_estimate") else None
     out.metric = mapping.metric_name
     out.profile = mapping.identity.primary
+    out.sample_payload = sample
+    out.sample_mapped = mapping.to_klaviyo_payload()
+    out.sample_traces = [
+        {"from": t.source_path, "to": t.destination, "value": str(t.value)[:60]}
+        for t in mapping.field_traces
+    ]
 
     # --- 2. persist it as a config ---------------------------------------
     if save_config:

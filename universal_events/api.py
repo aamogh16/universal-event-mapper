@@ -418,7 +418,9 @@ def connect_tool_endpoint() -> dict[str, Any]:
         "audience_after": after["size"],
         "removed": removed,
         "profile": target,
-        "sample_payload": history[0],
+        "sample_payload": res.sample_payload or (history[0] if history else {}),
+        "sample_mapped": res.sample_mapped,
+        "sample_traces": res.sample_traces,
         "landed": landed,
         "profile_before": profile_before,
     }

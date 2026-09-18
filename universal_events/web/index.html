@@ -598,6 +598,31 @@ function viewIngest(){
       <div class="quiet" style="margin-top:11px">The model is a one-time
       onboarding cost, not a per-event cost.</div>`;
 
+    // Before and after, on the actual data. The transformation is the thing
+    // being claimed, so show it rather than summarise it.
+    if(r.sample_payload && r.sample_mapped){
+      const g = el('div');
+      g.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-top:14px';
+      g.appendChild(el('div', null,
+        `<div class="sect">what Kisi sent</div>
+         <pre class="diff" style="max-height:300px">${esc(JSON.stringify(r.sample_payload,null,2))}</pre>`));
+      g.appendChild(el('div', null,
+        `<div class="sect">what it became — a Klaviyo event</div>
+         <pre class="diff" style="max-height:300px">${esc(JSON.stringify(r.sample_mapped,null,2))}</pre>`));
+      cbox.appendChild(g);
+
+      if(r.sample_traces && r.sample_traces.length){
+        const t = el('div','panel');
+        t.style.marginTop = '13px';
+        t.innerHTML = `<h3>Field by field</h3>
+          <table><tbody>${r.sample_traces.map(x =>
+            `<tr><td class="mono quiet">${esc(x.from)}</td>
+                 <td class="mono">→ ${esc(x.to)}</td>
+                 <td class="quiet">${esc(x.value)}</td></tr>`).join('')}</tbody></table>`;
+        cbox.appendChild(t);
+      }
+    }
+
     // The config the model wrote. This is the artifact that proves the mapping
     // was inferred rather than shipped -- a number in a box could be anything.
     if(r.config_yaml){
