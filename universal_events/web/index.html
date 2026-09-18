@@ -544,11 +544,20 @@ function viewIngest(){
   c.appendChild(r1);
 
   // The payoff: connect the tool properly and watch a conclusion change.
+  // The CURRENT audience is shown first -- otherwise "went from 9 to 8" refers
+  // to a number the viewer never saw, and has to be taken on faith.
+  const lapse = S.signals.find(x => x.kind === 'lapsed_member');
   const cbox = el('div','panel');
   cbox.style.marginTop = '14px';
   cbox.innerHTML = `<h3>Connect the door system for real</h3>
+    ${lapse ? `<div class="banner" style="background:rgba(210,153,34,.1);
+        border:1px solid #5c4a1a;margin-bottom:11px">
+        Right now the win-back audience is <b>${lapse.audience_size}</b> members
+        — <span class="quiet">${esc(lapse.audience_basis)}</span><br>
+        <span class="quiet" style="font-size:12px">${esc((lapse.audience_sample||[]).join(', '))}…</span>
+      </div>` : ''}
     <div class="quiet">Infer the mapping once with a model, save it as a config,
-    then replay three weeks of check-ins for free. Watch the win-back audience.</div>`;
+    then replay three weeks of check-ins for free. <b>Watch that number.</b></div>`;
   const cbtn = el('button','primary','Connect Kisi →');
   cbtn.style.marginTop = '11px';
   cbox.appendChild(cbtn);
