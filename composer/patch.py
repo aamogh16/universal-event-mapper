@@ -31,6 +31,17 @@ OpName = Literal[
 
 STEP_TYPES = {"delay", "email", "sms", "split", "update_profile"}
 
+# A trigger is a metric NAME. The schema has no field for a trigger filter, so
+# a model wanting to say "the 3rd no-show in 30 days" has nowhere to put the
+# condition and writes it into the name instead -- producing
+# "Class No-Show where count >= 3 in 30 days", which no metric is called and
+# nothing could execute. A prompt rule got this down to roughly 1 in 5; this
+# catches the rest.
+CONDITION_TOKENS = (
+    " where ", ">=", "<=", " count", " within ", " in the last ", "&&", "||",
+    " and ", " or ", " over ", "==",
+)
+
 
 class EditOp(BaseModel):
     """One change to a flow. Deliberately small and explicit."""
@@ -198,7 +209,26 @@ def apply_patch(flow: dict, ops: list[EditOp]) -> PatchResult:
                 assign_ids(draft, new_steps)
 
             elif op.op == "set_trigger":
-                draft.setdefault("trigger", {})["metric"] = op.value
+                value = str(op.value or "")
+                lowered = f" {value.lower()} "
+                if not value.strip():
+                    errors.append(
+                        PatchError(op_index=index, message="empty trigger metric")
+                    )
+                    continue
+                smuggled = [t for t in CONDITION_TOKENS if t in lowered]
+                if smuggled:
+                    errors.append(
+                        PatchError(
+                            op_index=index,
+                            message=(
+                                f"trigger must be a metric name, not a condition "
+                                f"(found {smuggled[0].strip()!r} in {value!r})"
+                            ),
+                        )
+                    )
+                    continue
+                draft.setdefault("trigger", {})["metric"] = value
 
             else:
                 errors.append(PatchError(op_index=index, message=f"unknown op {op.op!r}"))
