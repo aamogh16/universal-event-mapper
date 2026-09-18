@@ -279,10 +279,34 @@ def _seed_restaurant(rng: random.Random) -> int:
     return written
 
 
+GENERATED_CONFIGS = ("kisi_door_access",)
+
+
+def clear_generated_configs() -> list[str]:
+    """Delete configs that `connect_tool` wrote.
+
+    Without this, a second demo run finds the saved config, maps the door
+    payload deterministically, and never shows the model inferring it -- which
+    is the entire point of that beat.
+    """
+    from .config import MAPPINGS_DIR
+    from .mapping.config_mapper import load_config
+
+    removed = []
+    for name in GENERATED_CONFIGS:
+        path = MAPPINGS_DIR / f"{name}.yaml"
+        if path.exists():
+            path.unlink()
+            removed.append(name)
+    load_config.cache_clear()
+    return removed
+
+
 def seed_demo_history(*, reset: bool = True) -> dict[str, int]:
     """Build the full demo dataset. Returns per-vertical event counts."""
     if reset:
         store.reset()
+        clear_generated_configs()
     else:
         store.init_db()
     rng = random.Random(RNG_SEED)

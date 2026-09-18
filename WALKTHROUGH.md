@@ -56,6 +56,19 @@ These are **pure SQL** — no model involved. This is the raw material.
 `wait 3 days`, then one email. Remember the 3 days.
 
 ```bash
+./demo map door_access
+```
+**✓** Watch the badge: **`llm`**, because no config exists. The metric comes
+back **`Gym Check-In`** from a payload that literally says `lock.unlock`, and
+it lands on Kwame Osei, who is already in this account from Mindbody.
+
+```bash
+./demo connect-door
+```
+**✓** The audience goes **9 → 8** and it tells you who came out and why. One
+model call, then 12 events in ~7ms for free.
+
+```bash
 ./demo map tutoring
 ```
 **✓** A payload from a tutoring company. Watch the badge: **`llm`**, because no
@@ -88,18 +101,59 @@ query, not by a model."*
 Top-right pills: `Klaviyo live` · `model gpt-5.4-mini` · `spent $0.00` ·
 `events 304`. Watch **spent** climb as you go.
 
-### 2b · An event from a tool nobody integrated
+### 2b · The gym's other tools
 
-**Tab: `Event ingest` → click `veterinary`.**
+**Tab: `Event ingest`.** Read the line at the top — Ironline runs on Mindbody,
+which Klaviyo integrates, *and three other tools that it does not*.
 
-**✓** Left: the raw vet-clinic payload. Right: a violet **⚡ Inferred by a
-model** badge with tokens and latency. Field-by-field table shows
-`patient.owner.contact_email → profile.email`. Green banner with a
-**Klaviyo profile link — click it**, and confirm Leah Fitzgerald exists in your
-account.
+**Click `Kisi`** (the door-access system).
 
-Also click `physical_therapy` — that one pulls the patient out of a FHIR-style
-`telecom` array.
+**✓** Left: the raw payload — `"type": "lock.unlock"`, a unix timestamp, and the
+member buried under `actor.reference`. Right: a violet **⚡ Inferred by a model**
+badge. The metric reads **`Gym Check-In`**, *not* "Lock Unlocked" — it
+translated machine vocabulary into what a marketer would say.
+
+**✓** The profile is **Kwame Osei**, who already exists in this account from
+Mindbody. Click the Klaviyo link and confirm.
+
+**Click `Trainerize`.** **✓** Value reads **$960**, and there's a warning
+beneath: the payload said `price_paid_cents: 96000` and it caught the minor
+units.
+
+### 2b(ii) · Connect it properly — the payoff
+
+Scroll down to **`Connect the door system for real`** and note the current
+win-back audience is **9 people** (you'll see it again in 2e).
+
+**Click `Connect Kisi →`.** ~3 seconds.
+
+**✓** The panel replaces itself with:
+```
+inferred once    ~3000ms (model)
+metric           Gym Check-In
+saved as         mappings/kisi_door_access.yaml
+then replayed    12 check-ins in 7ms
+cost of those    $0.00 — config-driven, no model call
+```
+**✓** And a green banner:
+```
+Win-back audience went from 9 to 8.
+Chidi Mbeki came out — looked silent to Mindbody, but has been
+in the gym the whole time.
+```
+
+**This is the strongest moment in Part 1.** Two things just happened:
+
+1. **The model was a one-time cost.** It inferred the mapping once, saved it as
+   a config, and the next twelve events cost nothing and took 7ms. A gym with
+   four tools pays for four inferences, ever.
+2. **A wrong marketing decision was prevented.** Chidi looked lapsed for 33
+   days because he stopped *booking classes*. He never stopped turning up. Any
+   system relying on Mindbody alone would have emailed him "we miss you" while
+   he was standing in the gym.
+
+*Also try `physical_therapy` and `tutoring` further down if you want breadth —
+different industries, same machinery.*
 
 ### 2c · The trigger, arriving unprompted
 
@@ -154,7 +208,7 @@ because nothing existed. Check the trigger line: it says
 going quiet fires no event.
 
 **Open the 🟢 `campaign` one.** **✓** It shows:
-- **9 people**, with the counting rule spelled out
+- **8 people** (9 if you skipped 2b(ii)), with the counting rule spelled out
 - Actual names: Jordan Avery, Rada Antonova, Chidi Mbeki…
 - A complete email with `{{ first_name }}` merge tags
 

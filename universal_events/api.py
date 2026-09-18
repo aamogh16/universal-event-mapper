@@ -339,6 +339,45 @@ def chat_suggestions() -> dict[str, Any]:
     return {"prompts": chat_mod.SUGGESTED_PROMPTS}
 
 
+@app.post("/api/connect-tool")
+def connect_tool_endpoint() -> dict[str, Any]:
+    """Connect the door system: infer once, save a config, replay history."""
+    from . import connect
+    from composer import audience, signals
+
+    def quiet() -> dict[str, Any]:
+        sig = next((s for s in signals.detect_aggregate()
+                    if s.kind == "lapsed_member"), None)
+        if sig is None:
+            return {"size": 0, "names": []}
+        aud = audience.resolve(sig)
+        return {"size": aud.size,
+                "names": [p.display_name for p in aud.profiles]}
+
+    before = quiet()
+    res = connect.connect_tool(
+        "Kisi", sources.GYM_TOOLS["door_access"]["payload"],
+        sources.door_checkin_history(), send=False)
+    after = quiet()
+    removed = [n for n in before["names"] if n not in after["names"]]
+
+    return {
+        "tool": res.tool,
+        "metric": res.metric,
+        "inference_ms": res.inference_ms,
+        "inferred_from_model": res.inferred_from_model,
+        "config_name": res.config_name,
+        "config_yaml": res.config_yaml,
+        "events_ingested": res.events_ingested,
+        "batch_ms": res.batch_ms,
+        "per_event_after_setup": res.per_event_after_setup,
+        "warnings": res.warnings,
+        "audience_before": before["size"],
+        "audience_after": after["size"],
+        "removed": removed,
+    }
+
+
 @app.post("/api/demo/arm")
 def arm(req: ArmReq) -> dict[str, Any]:
     """Fire an event after a delay, on a background thread."""

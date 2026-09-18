@@ -646,6 +646,43 @@ UNKNOWN_PAYLOADS: dict[str, dict[str, Any]] = {
 }
 
 
+# Who has been coming to the gym without booking a class. Chidi is in the
+# "quiet member" cohort -- silent for 33 days by Mindbody's reckoning -- but
+# he never stopped turning up, he just stopped booking. The door system is the
+# only thing that knows.
+DOOR_REGULAR = Persona("c.mbeki@outlook.com", "Chidi", "Mbeki", "+16175550781")
+
+
+def door_checkin(persona: Persona, days_ago: float) -> dict[str, Any]:
+    """One Kisi door-unlock event, backdated."""
+    when = _now() - timedelta(days=days_ago)
+    return {
+        "type": "lock.unlock",
+        "occurred": int(when.timestamp()),
+        "place": {"id": 5521, "name": "Ironline Strength Co."},
+        "door": {"id": 9, "name": "Main Entrance"},
+        "actor": {
+            "kind": "member",
+            "reference": persona.email,
+            "full_name": f"{persona.first_name} {persona.last_name}",
+            "groups": ["Unlimited Monthly", "24h Access"],
+        },
+        "method": "mobile_credential",
+    }
+
+
+def door_checkin_history(
+    persona: Persona | None = None, count: int = 12
+) -> list[dict[str, Any]]:
+    """A realistic run of check-ins across the last three weeks.
+
+    Deterministic spacing so the demo is reproducible: roughly every other
+    day, which reads as someone training consistently.
+    """
+    who = persona or DOOR_REGULAR
+    return [door_checkin(who, days_ago=round(1.5 * i + 1, 1)) for i in range(count)]
+
+
 def all_unintegrated() -> dict[str, dict[str, Any]]:
     """Gym tools first, then the other verticals."""
     merged: dict[str, dict[str, Any]] = {}

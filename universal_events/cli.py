@@ -106,6 +106,58 @@ def sync_profiles() -> None:
     console.print("[dim]campaigns will now find these profiles rather than create them[/]")
 
 
+@app.command("connect-door")
+def connect_door(
+    send: bool = typer.Option(False, help="also POST each check-in to Klaviyo"),
+) -> None:
+    """Connect the gym's door system: infer once, save a config, replay history.
+
+    Watch the win-back audience shrink -- one of the 'quiet' members turns out
+    to have been in the gym all along.
+    """
+    from . import connect
+    from composer import audience, signals
+
+    def quiet():
+        sig = next((s for s in signals.detect_aggregate()
+                    if s.kind == "lapsed_member"), None)
+        return audience.resolve(sig) if sig else None
+
+    before = quiet()
+    if before:
+        console.print(f"[bold]before[/] — win-back audience: "
+                      f"[bold]{before.size}[/] members")
+        console.print(f"  [dim]{', '.join(before.sample_names)}…[/]")
+
+    console.print("\nconnecting [bold]Kisi[/] (door access) — no connector exists")
+    res = connect.connect_tool(
+        "Kisi", sources.GYM_TOOLS["door_access"]["payload"],
+        sources.door_checkin_history(), send=send)
+
+    console.print(f"  inferred the mapping once   {res.inference_ms}ms"
+                  f"{' [dim](model)[/]' if res.inferred_from_model else ' [yellow](offline)[/]'}")
+    console.print(f"  metric                      [bold]{res.metric}[/]")
+    if res.config_name:
+        console.print(f"  saved as                    mappings/{res.config_name}.yaml")
+    console.print(f"  replayed {res.events_ingested} check-ins        "
+                  f"{res.batch_ms}ms")
+    console.print(f"  cost of those {res.events_ingested}            "
+                  f"[green]{res.per_event_after_setup}[/]")
+    for w in res.warnings:
+        console.print(f"  [yellow]! {w}[/]")
+
+    after = quiet()
+    if before and after:
+        console.print(f"\n[bold]after[/] — win-back audience: "
+                      f"[bold]{after.size}[/] members")
+        gone = {p.profile_key for p in before.profiles} - {p.profile_key for p in after.profiles}
+        for key in gone:
+            was = next(p for p in before.profiles if p.profile_key == key)
+            console.print(f"  [green]removed[/] {was.display_name} — "
+                          f"looked silent for {was.days_since_last_event}d, "
+                          f"but has been in the gym all along")
+
+
 @app.command("sources")
 def list_sources() -> None:
     """Show the mock event sources and which ones Klaviyo already integrates."""

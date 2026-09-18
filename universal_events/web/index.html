@@ -515,6 +515,45 @@ function viewIngest(){
   gym.forEach(u => r1.appendChild(mk(u)));
   c.appendChild(r1);
 
+  // The payoff: connect the tool properly and watch a conclusion change.
+  const cbox = el('div','panel');
+  cbox.style.marginTop = '14px';
+  cbox.innerHTML = `<h3>Connect the door system for real</h3>
+    <div class="quiet">Infer the mapping once with a model, save it as a config,
+    then replay three weeks of check-ins for free. Watch the win-back audience.</div>`;
+  const cbtn = el('button','primary','Connect Kisi →');
+  cbtn.style.marginTop = '11px';
+  cbox.appendChild(cbtn);
+  c.appendChild(cbox);
+
+  cbtn.onclick = async () => {
+    cbtn.disabled = true;
+    cbtn.innerHTML = '<span class="spin"></span> inferring the mapping…';
+    const r = await api('/connect-tool', {});
+    await refresh();
+    const dropped = r.removed.length
+      ? `<div class="banner ok" style="margin-top:11px">
+           Win-back audience went from <b>${r.audience_before}</b> to
+           <b>${r.audience_after}</b>.<br>
+           <b>${esc(r.removed.join(', '))}</b> came out — looked silent to
+           Mindbody, but has been in the gym the whole time.
+         </div>`
+      : '';
+    cbox.innerHTML = `<h3>Door system connected</h3>
+      <dl class="kv">
+        <dt>inferred once</dt><dd>${r.inference_ms}ms
+          ${r.inferred_from_model ? '<span class="quiet">(model)</span>'
+                                  : '<span style="color:var(--warn)">(offline)</span>'}</dd>
+        <dt>metric</dt><dd><b>${esc(r.metric)}</b></dd>
+        <dt>saved as</dt><dd class="mono quiet">mappings/${esc(r.config_name||'—')}.yaml</dd>
+        <dt>then replayed</dt><dd>${r.events_ingested} check-ins in <b>${r.batch_ms}ms</b></dd>
+        <dt>cost of those</dt><dd style="color:var(--campaign)">${esc(r.per_event_after_setup)}</dd>
+      </dl>
+      ${dropped}
+      <div class="quiet" style="margin-top:11px">The model is a one-time
+      onboarding cost, not a per-event cost.</div>`;
+  };
+
   if(other.length){
     c.appendChild(el('div','quiet',
       '<div style="margin-top:14px">And the same machinery on other industries '
