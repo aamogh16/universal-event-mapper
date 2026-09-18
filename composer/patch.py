@@ -216,8 +216,14 @@ def validate_flow(flow: dict) -> list[str]:
         kind = step.get("type")
         if kind not in STEP_TYPES:
             problems.append(f"{sid}: unknown step type {kind!r}")
-        elif kind == "delay" and not isinstance(step.get("hours"), (int, float)):
-            problems.append(f"{sid}: delay needs numeric `hours`")
+        elif kind == "delay":
+            hours = step.get("hours")
+            if not isinstance(hours, (int, float)) or isinstance(hours, bool):
+                problems.append(f"{sid}: delay needs numeric `hours`")
+            elif hours < 1:
+                # A zero delay means "send instantly", which is never what a
+                # win-back wants and reads as a mistake to the recipient.
+                problems.append(f"{sid}: delay of {hours}h is too short (minimum 1)")
         elif kind in ("email", "sms") and not str(step.get("body") or "").strip():
             problems.append(f"{sid}: {kind} has no body")
         elif kind == "split":

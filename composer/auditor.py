@@ -122,6 +122,22 @@ class ProposedOp(BaseModel):
         )
 
 
+class LearnedRule(BaseModel):
+    """One durable lesson, with its own scope.
+
+    Scope is per-rule, not per-batch: a single rejection can contain both a
+    business-specific rule ("our members hate texts") and a universal one
+    ("nothing before 9am"), and one shared flag forces the wrong scope onto
+    one of them.
+    """
+
+    rule: str = Field(description="Short imperative, e.g. 'Never propose SMS'")
+    applies_everywhere: bool = Field(
+        description="True only if this holds for ANY industry. Anything tied to "
+        "this business's audience, product or channel preferences is False."
+    )
+
+
 class LLMAudit(BaseModel):
     """Exactly what the model is allowed to return."""
 
@@ -132,18 +148,11 @@ class LLMAudit(BaseModel):
     predicted_impact: str = Field(description="What changes if this is approved")
     ops: list[ProposedOp] = Field(description="The concrete edits to make")
     confidence: float = Field(description="0 to 1")
-    learned_rules: list[str] = Field(
+    learned: list[LearnedRule] = Field(
         default_factory=list,
         description="Only when revising: EVERY durable lesson in the user's "
-        "feedback, one short imperative each. A single rejection often carries "
-        "several ('no SMS' AND 'never ask within 30 days') -- return all of "
-        "them, not just the first. Empty list otherwise.",
-    )
-    learned_rule_is_global: bool = Field(
-        default=False,
-        description="True ONLY if the lessons apply to every industry. Anything "
-        "tied to this business type (donations, class bookings, appointments) is "
-        "NOT global -- leave false.",
+        "feedback, each with its own scope. A single rejection often carries "
+        "several -- return all of them, not just the first. Empty otherwise.",
     )
 
 
@@ -172,8 +181,7 @@ class DraftedFlow(BaseModel):
     rationale: str = Field(description="Why this flow, and why it is needed at all")
     predicted_impact: str
     confidence: float
-    learned_rules: list[str] = Field(default_factory=list)
-    learned_rule_is_global: bool = False
+    learned: list[LearnedRule] = Field(default_factory=list)
 
 
 class AuditOutput(BaseModel):
@@ -190,11 +198,8 @@ class AuditOutput(BaseModel):
     output_tokens: int | None = None
     cost_usd: float | None = None
     latency_ms: int | None = None
-    learned_rule: str | None = None
-    learned_rule_is_global: bool = False
-    # A single rejection often carries several lessons ("no SMS, and never ask
-    # within 30 days"). Storing only the first silently loses the rest.
-    learned_rules: list[str] = Field(default_factory=list)
+    # (rule, applies_everywhere) pairs. Scope is per rule.
+    learned: list[tuple[str, bool]] = Field(default_factory=list)
     fallback_reason: str | None = None
     # Set instead of `ops` when the proposal is to CREATE an automation
     # rather than patch one. Composer's native unit is a generated campaign
@@ -363,6 +368,13 @@ def _finalise(
             "no ops applied: " + "; ".join(e.message for e in result.errors)
         )
 
+    # Structural problems carry op_index -1, so they are not attributable to a
+    # single op and cannot be dropped selectively. They mean the resulting flow
+    # is broken, so the whole patch is refused rather than shown to the user.
+    structural = [e.message for e in result.errors if e.op_index < 0]
+    if structural:
+        raise RuntimeError("patch produced an invalid flow: " + "; ".join(structural))
+
     # Drop individual ops that failed, keep the rest, and note it.
     if result.errors:
         bad = {e.op_index for e in result.errors if e.op_index >= 0}
@@ -378,9 +390,7 @@ def _finalise(
         ops=ops,
         confidence=audit.confidence,
         source="llm",
-        learned_rule=audit.learned_rules[0] if audit.learned_rules else None,
-        learned_rule_is_global=audit.learned_rule_is_global,
-        learned_rules=list(audit.learned_rules),
+        learned=[(x.rule, x.applies_everywhere) for x in audit.learned],
         **meta,
     )
 
@@ -395,7 +405,7 @@ def propose(bundle: ContextBundle) -> AuditOutput:
         + "\n## Your task\n"
         "Audit the flow above against what was noticed. Identify why this flow "
         "mishandles this specific signal, then propose the concrete edits that "
-        "fix it. Leave learned_rules empty."
+        "fix it. Leave `learned` empty."
     )
     try:
         audit, meta = _ask(SYSTEM_PROMPT, prompt, LLMAudit)
@@ -446,10 +456,9 @@ def revise(
         "simply retry the same idea. If the feedback rules something out, remove "
         "it entirely rather than softening it. Keep the parts of your previous "
         "proposal the feedback did not object to.\n"
-        "Also fill learned_rules with EVERY durable lesson in this feedback -- "
-        "one short imperative each -- so you never need to be told any of them "
-        "again. If the user objected to two things, return two rules. Set "
-        "learned_rule_is_global to true only if the lessons are industry-agnostic."
+        "Also fill `learned` with EVERY durable lesson in this feedback -- one "
+        "entry each, with its own applies_everywhere flag. If the user objected "
+        "to two things, return two rules."
     )
     try:
         audit, meta = _ask(SYSTEM_PROMPT, prompt, LLMAudit)
@@ -578,7 +587,7 @@ def propose_new_flow(bundle: ContextBundle) -> AuditOutput:
         bundle.to_prompt()
         + "\n## Your task\n"
         "Draft a new automation that handles the signal above. Explain why the "
-        "business needs it, not just what it contains. Leave learned_rules empty."
+        "business needs it, not just what it contains. Leave `learned` empty."
     )
     try:
         draft, meta = _ask(DRAFT_SYSTEM_PROMPT, prompt, DraftedFlow)
@@ -682,8 +691,7 @@ class DraftedCampaign(BaseModel):
     rationale: str = Field(description="Why send this, to these people, now")
     predicted_impact: str
     confidence: float
-    learned_rules: list[str] = Field(default_factory=list)
-    learned_rule_is_global: bool = False
+    learned: list[LearnedRule] = Field(default_factory=list)
 
 
 CAMPAIGN_SYSTEM_PROMPT = SYSTEM_PROMPT.split("Edit operation reference:")[0] + """
@@ -726,7 +734,7 @@ def propose_campaign(bundle: ContextBundle, aud: Any) -> AuditOutput:
         + render_audience(aud)
         + "\n\n## Your task\n"
         "Draft a one-off campaign to these people. A flow would only catch "
-        "future cases; these are already in this state. Leave learned_rules empty."
+        "future cases; these are already in this state. Leave `learned` empty."
     )
     try:
         draft, meta = _ask(CAMPAIGN_SYSTEM_PROMPT, prompt, DraftedCampaign)
@@ -768,6 +776,83 @@ def propose_campaign(bundle: ContextBundle, aud: Any) -> AuditOutput:
             confidence=draft.confidence,
             source="llm",
             drafted_campaign=campaign,
+            **meta,
+        )
+    except Exception as exc:
+        return _campaign_with_rules(
+            bundle, aud, reason=f"{type(exc).__name__}: {exc}"[:200]
+        )
+
+
+def revise_campaign(
+    bundle: ContextBundle, previous: dict[str, Any], user_feedback: str, aud: Any
+) -> AuditOutput:
+    """Revise a rejected CAMPAIGN from feedback.
+
+    Campaign proposals carry no edit ops, so the flow-patch revision path had
+    nothing to work with and silently produced no revision and no lessons --
+    which broke the most important beat in the demo.
+    """
+    if not _usable():
+        return _campaign_with_rules(bundle, aud, reason="no OpenAI key configured")
+
+    from .audience import render_for_prompt as render_audience
+
+    prompt = (
+        bundle.to_prompt()
+        + "\n## The audience for this send\n"
+        + render_audience(aud)
+        + "\n\n## The campaign you proposed, which the user REJECTED\n"
+        + f"channel: {previous.get('channel')}\n"
+        + f"timing: {previous.get('send_timing')}\n"
+        + f"subject: {previous.get('subject')}\n"
+        + f"body:\n{previous.get('body')}\n"
+        + "\n## The user's feedback, verbatim\n"
+        + f'"{user_feedback}"\n\n'
+        + "## Your task\n"
+        "Rewrite the campaign so it addresses this feedback directly. Change "
+        "channel, timing, tone or copy as needed. Do not simply resend the same "
+        "message. Keep what the feedback did not object to.\n"
+        "Also fill `learned` with EVERY durable lesson in this feedback -- one "
+        "entry each, with its own applies_everywhere flag."
+    )
+    try:
+        draft, meta = _ask(CAMPAIGN_SYSTEM_PROMPT, prompt, DraftedCampaign)
+        channel = draft.channel
+        blocked = {c.rule.lower() for c in bundle.corrections}
+        forced = None
+        if channel == "sms" and any("sms" in r for r in blocked):
+            channel = "email"
+            forced = "channel forced to email by a learned correction"
+
+        fixes = _detemplate(
+            [{"id": "c1", "type": channel, "body": draft.body, "subject": draft.subject}],
+            bundle,
+        )
+        campaign = {
+            "name": draft.name,
+            "channel": channel,
+            "subject": draft.subject if channel == "email" else "",
+            "body": draft.body,
+            "send_timing": draft.send_timing,
+            "audience_description": aud.description,
+            "audience_size": aud.size,
+            "audience_basis": aud.basis,
+            "audience_sample": aud.sample_names,
+            "_copy_fixes": fixes,
+            "_forced": forced,
+        }
+        return AuditOutput(
+            headline=f"Revised — {draft.name}",
+            observation=draft.observation,
+            audit_summary=draft.rationale,
+            findings=([forced] if forced else [])
+            + [f"Still targeting the same {aud.size} people."],
+            predicted_impact=draft.predicted_impact,
+            confidence=draft.confidence,
+            source="llm",
+            drafted_campaign=campaign,
+            learned=[(x.rule, x.applies_everywhere) for x in draft.learned],
             **meta,
         )
     except Exception as exc:

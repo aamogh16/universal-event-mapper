@@ -403,22 +403,34 @@ def reject(proposal_id: str, user_feedback: str) -> Proposal | None:
     if proposal is None:
         return None
 
+    # Campaign proposals have no backing flow, so a missing flow is only fatal
+    # for patch/create kinds.
     flow = flow_store.get_flow(proposal.flow_id)
-    if flow is None:
+    if flow is None and proposal.kind != "campaign":
         return proposal
 
     proposal.rejection_feedback.append(user_feedback)
 
     # Rebuild context so the revision sees any corrections learned since.
     signal = _rehydrate_signal(proposal)
-    bundle = context.build(signal, flow)
-    audit = auditor.revise(bundle, proposal.current.ops, user_feedback)
+    bundle = context.build(
+        signal, flow, sibling_flows=flow_store.flows_for(vertical=proposal.vertical)
+    )
+    if proposal.kind == "campaign" and proposal.current.drafted_campaign:
+        audit = auditor.revise_campaign(
+            bundle,
+            proposal.current.drafted_campaign,
+            user_feedback,
+            audience.resolve(signal),
+        )
+    else:
+        audit = auditor.revise(bundle, proposal.current.ops, user_feedback)
 
-    for rule in audit.learned_rules or ([audit.learned_rule] if audit.learned_rule else []):
+    for rule, everywhere in audit.learned:
         feedback.add(
             rule,
             raw_feedback=user_feedback,
-            vertical=None if audit.learned_rule_is_global else proposal.vertical,
+            vertical=None if everywhere else proposal.vertical,
             source_proposal_id=proposal.id,
         )
 
