@@ -1,0 +1,20 @@
+{
+  "id": "flow_fitness_milestone",
+  "name": "25-Class Milestone",
+  "vertical": "fitness",
+  "business": "Ironline Strength Co.",
+  "status": "live",
+  "version": 1,
+  "trigger": { "type": "metric", "metric": "Class Booked" },
+  "handles_signals": [],
+  "steps": [
+    { "id": "s1", "type": "delay", "hours": 2 },
+    {
+      "id": "s2",
+      "type": "email",
+      "subject": "25 classes. Nice work.",
+      "body": "Hi {{ first_name }}, that's your 25th class at Ironline. That's a real habit now. Coach Ray wanted us to say well done.",
+      "cta": "See your stats"
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "id": "flow_fitness_first_class",
+  "name": "Post-First-Class Follow-Up",
+  "vertical": "fitness",
+  "business": "Ironline Strength Co.",
+  "status": "live",
+  "version": 1,
+  "trigger": { "type": "metric", "metric": "Class Booked" },
+  "handles_signals": [],
+  "steps": [
+    { "id": "s1", "type": "delay", "hours": 24 },
+    {
+      "id": "s2",
+      "type": "email",
+      "subject": "How was your first class?",
+      "body": "Hi {{ first_name }}, hope your first session went well. Coach Ray says the best thing you can do now is book the next one while it's fresh.",
+      "cta": "Book your next class"
+    },
+    {
+      "id": "s3",
+      "type": "split",
+      "condition": { "field": "classes_attended", "op": "equals", "value": 1 },
+      "true_branch": [],
+      "false_branch": []
+    }
+  ]
+}

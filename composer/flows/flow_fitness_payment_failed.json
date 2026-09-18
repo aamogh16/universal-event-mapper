@@ -1,0 +1,20 @@
+{
+  "id": "flow_fitness_payment_failed",
+  "name": "Payment Failed Recovery",
+  "vertical": "fitness",
+  "business": "Ironline Strength Co.",
+  "status": "live",
+  "version": 1,
+  "trigger": { "type": "metric", "metric": "Payment Failed" },
+  "handles_signals": [],
+  "steps": [
+    { "id": "s1", "type": "delay", "hours": 168 },
+    {
+      "id": "s2",
+      "type": "email",
+      "subject": "There was a problem with your payment",
+      "body": "Hi {{ first_name }}, we couldn't process your membership payment. Please update your card so your access isn't interrupted.",
+      "cta": "Update payment details"
+    }
+  ]
+}
