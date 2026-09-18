@@ -618,7 +618,9 @@ function viewIngest(){
           <table><tbody>${r.sample_traces.map(x =>
             `<tr><td class="mono quiet">${esc(x.from)}</td>
                  <td class="mono">→ ${esc(x.to)}</td>
-                 <td class="quiet">${esc(x.value)}</td></tr>`).join('')}</tbody></table>`;
+                 <td class="quiet">${esc(x.value)}${
+                   x.note ? `<br><span style="font-size:11px;opacity:.7">${esc(x.note)}</span>` : ''
+                 }</td></tr>`).join('')}</tbody></table>`;
         cbox.appendChild(t);
       }
     }

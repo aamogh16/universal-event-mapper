@@ -240,8 +240,15 @@ def map_with_llm(payload: dict[str, Any], *, model: str | None = None) -> Mappin
         if occurred_at is None:
             warnings.append(f"Could not parse a timestamp from {ts_path!r}.")
         else:
+            # Show the conversion, not just the input. A bare unix integer in
+            # the "time" row hides the only interesting thing about it.
             traces.append(
-                FieldTrace(source_path=ts_path or "", destination="time", value=ts)
+                FieldTrace(
+                    source_path=ts_path or "",
+                    destination="time",
+                    value=occurred_at.isoformat(),
+                    note=f"parsed from {ts!r}",
+                )
             )
 
     numeric = None

@@ -118,7 +118,8 @@ def connect_tool(
     out.sample_payload = sample
     out.sample_mapped = mapping.to_klaviyo_payload()
     out.sample_traces = [
-        {"from": t.source_path, "to": t.destination, "value": str(t.value)[:60]}
+        {"from": t.source_path, "to": t.destination,
+         "value": str(t.value)[:60], "note": t.note}
         for t in mapping.field_traces
     ]
 
