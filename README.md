@@ -40,6 +40,7 @@ See [`PITCH.md`](PITCH.md) for the full positioning and the claims to avoid.
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env          # add KLAVIYO_PRIVATE_API_KEY and OPENAI_API_KEY
 ./demo reset                  # seed 300+ backdated events, flows to v1
+./demo sync-profiles          # optional: create those members in Klaviyo first
 ./serve                       # dashboard at http://localhost:8000
 ```
 
@@ -144,10 +145,23 @@ burned ~11k reasoning tokens and still missed the obvious finding.
 | Audits, copy, revisions | **real** — live model calls, cost shown per proposal |
 | Learned corrections | **real** — persisted, scoped, re-applied |
 | Flows | **mock** — simplified JSON, not Klaviyo flow definitions |
-| Campaign "send" | **simulated** — recorded locally, nothing transmitted |
+| Campaigns | **real** — approving creates a Draft campaign in Klaviyo |
+| Campaign *sending* | **never** — `send-jobs` is deliberately not implemented |
 
-The last two are deliberate. See [`SCOPE-campaigns.md`](SCOPE-campaigns.md)
-for what making campaigns real would take.
+Flows staying mock is deliberate — they are a simplified stand-in so the
+reasoning is legible. Campaign *sending* is deliberate too: on a free plan,
+email #501 auto-upgrades the account with no grace period, and no version of
+this demo is improved by emailing nine fictional people. See
+[`SCOPE-campaigns.md`](SCOPE-campaigns.md).
+
+### A note on profiles
+
+Seeded history is written to the local mirror only, so `reset` does not push
+300 events into a 250-profile free account. That means the seeded members do
+not exist in Klaviyo until you run `./demo sync-profiles`, which creates them
+as identities (no events). In production every event flows through to Klaviyo,
+so those profiles would already be there and a campaign would simply
+reference them — this makes the demo match that.
 
 ---
 

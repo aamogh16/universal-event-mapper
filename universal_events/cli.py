@@ -80,6 +80,25 @@ def reset() -> None:
 # ---------------------------------------------------------------- part one
 
 
+@app.command("sync-profiles")
+def sync_profiles() -> None:
+    """Create the seeded members as Klaviyo profiles.
+
+    Run once after `reset` if you want profiles to exist before any campaign,
+    which is how it would work in production.
+    """
+    _, _, _, _, _, runners, _ = _c()
+    console.print("creating seeded members as Klaviyo profiles "
+                  "[dim](identities only, no events)[/]")
+    counts = seeder.sync_profiles_to_klaviyo()
+    console.print(f"  upserted {counts['created']}")
+    if counts["failed"]:
+        console.print(f"  [yellow]failed {counts['failed']}[/]")
+    if counts["skipped"]:
+        console.print(f"  [dim]skipped {counts['skipped']} over the cap[/]")
+    console.print("[dim]campaigns will now find these profiles rather than create them[/]")
+
+
 @app.command("sources")
 def list_sources() -> None:
     """Show the mock event sources and which ones Klaviyo already integrates."""

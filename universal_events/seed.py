@@ -294,3 +294,46 @@ def seed_demo_history(*, reset: bool = True) -> dict[str, int]:
     }
     counts["total"] = sum(counts.values())
     return counts
+
+
+def sync_profiles_to_klaviyo(limit: int = 40) -> dict[str, int]:
+    """Create the seeded members as Klaviyo profiles, without their events.
+
+    Why this exists: seeded history is written locally so `reset` does not dump
+    300 events into a 250-profile free account. That leaves the seeded members
+    missing from Klaviyo, which means a campaign approval has to create them on
+    the spot -- a shim patching over the shortcut, not how it would really work.
+
+    In production every event flows through to Klaviyo, so these profiles would
+    already be there and a campaign would simply find them. This makes the demo
+    match that: profiles exist first, campaigns just reference them.
+
+    Events are deliberately NOT sent -- only identities. 300 event calls would
+    be slow and would not change anything the agent reasons about, since it
+    reads the local mirror.
+    """
+    from .klaviyo import CampaignBuilder, KlaviyoClient
+    from . import store
+
+    client = KlaviyoClient()
+    if client.dry_run:
+        return {"created": 0, "existing": 0, "failed": 0, "skipped": 1}
+
+    builder = CampaignBuilder(client)
+    counts = {"created": 0, "existing": 0, "failed": 0, "skipped": 0}
+
+    profiles = store.profiles_with_history()[:limit]
+    counts["skipped"] = max(0, len(store.profiles_with_history()) - len(profiles))
+
+    for summary in profiles:
+        if not summary.email:
+            counts["failed"] += 1
+            continue
+        before = builder.upsert_profile(
+            summary.email, summary.first_name, summary.last_name
+        )
+        if before:
+            counts["created"] += 1
+        else:
+            counts["failed"] += 1
+    return counts
