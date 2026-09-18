@@ -576,19 +576,42 @@ function viewIngest(){
            Mindbody, but has been in the gym the whole time.
          </div>`
       : '';
+    const landedLine = (r.landed && r.landed.length)
+      ? `<dt>landed on</dt><dd>${esc(r.profile||'')} — <b>${r.landed.length}</b>
+           check-ins, most recent <b>${r.landed[0].age_days}d</b> ago
+           ${r.profile_before && r.profile_before.days_ago
+              ? `<span class="quiet">(their last non-check-in event was
+                 ${r.profile_before.days_ago}d ago)</span>` : ''}</dd>`
+      : '';
+
     cbox.innerHTML = `<h3>Door system connected</h3>
       <dl class="kv">
         <dt>inferred once</dt><dd>${r.inference_ms}ms
           ${r.inferred_from_model ? '<span class="quiet">(model)</span>'
                                   : '<span style="color:var(--warn)">(offline)</span>'}</dd>
         <dt>metric</dt><dd><b>${esc(r.metric)}</b></dd>
-        <dt>saved as</dt><dd class="mono quiet">mappings/${esc(r.config_name||'—')}.yaml</dd>
         <dt>then replayed</dt><dd>${r.events_ingested} check-ins in <b>${r.batch_ms}ms</b></dd>
         <dt>cost of those</dt><dd style="color:var(--campaign)">${esc(r.per_event_after_setup)}</dd>
+        ${landedLine}
       </dl>
       ${dropped}
       <div class="quiet" style="margin-top:11px">The model is a one-time
       onboarding cost, not a per-event cost.</div>`;
+
+    // The config the model wrote. This is the artifact that proves the mapping
+    // was inferred rather than shipped -- a number in a box could be anything.
+    if(r.config_yaml){
+      const details = el('details');
+      details.style.marginTop = '13px';
+      details.innerHTML =
+        `<summary style="cursor:pointer;font-size:12.5px;color:var(--accent)">`
+        + `the config it wrote — mappings/${esc(r.config_name)}.yaml</summary>`
+        + `<pre class="diff" style="margin-top:9px">${esc(r.config_yaml)}</pre>`
+        + `<div class="quiet" style="margin-top:7px;font-size:12px">Nothing in here`
+        + ` was written by hand. Every path came from the model reading one payload,`
+        + ` and every later check-in was mapped by this file — no model call.</div>`;
+      cbox.appendChild(details);
+    }
   };
 
   if(other.length){

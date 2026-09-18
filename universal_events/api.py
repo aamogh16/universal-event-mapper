@@ -373,11 +373,31 @@ def connect_tool_endpoint() -> dict[str, Any]:
                 "names": [p.display_name for p in aud.profiles]}
 
     before = quiet()
+    history = sources.door_checkin_history()
     res = connect.connect_tool(
-        "Kisi", sources.GYM_TOOLS["door_access"]["payload"],
-        sources.door_checkin_history(), send=False)
+        "Kisi", sources.GYM_TOOLS["door_access"]["payload"], history, send=False)
     after = quiet()
     removed = [n for n in before["names"] if n not in after["names"]]
+
+    # Evidence, not a claim. A number in a box is indistinguishable from
+    # hardcoded text, so return the artifacts: the config the model wrote, the
+    # raw payload it read, and the events that actually landed on the profile.
+    landed: list[dict[str, Any]] = []
+    profile_before: dict[str, Any] = {}
+    if res.profile:
+        events = store.events_for_profile(res.profile, limit=30)
+        landed = [
+            {"date": str(e.occurred_at.date()), "age_days": e.age_days,
+             "metric": e.metric_name, "door": e.properties.get("Door")}
+            for e in events if "Check" in e.metric_name
+        ]
+        others = [e for e in events if "Check" not in e.metric_name]
+        if others:
+            profile_before = {
+                "last_non_checkin": str(others[0].occurred_at.date()),
+                "days_ago": others[0].age_days,
+                "metric": others[0].metric_name,
+            }
 
     return {
         "tool": res.tool,
@@ -393,6 +413,10 @@ def connect_tool_endpoint() -> dict[str, Any]:
         "audience_before": before["size"],
         "audience_after": after["size"],
         "removed": removed,
+        "profile": res.profile,
+        "sample_payload": history[0],
+        "landed": landed,
+        "profile_before": profile_before,
     }
 
 
